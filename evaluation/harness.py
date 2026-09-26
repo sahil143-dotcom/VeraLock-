@@ -60,6 +60,12 @@ class Failure:
 class TurnScore:
     turn_id: str
     passed: bool
+    expected_speech: str
+    actual_speech: Optional[str]
+    expected_status: Optional[str]
+    status_checked: bool
+    actual_status: Optional[str]
+    has_result: bool
     failures: list[Failure] = field(default_factory=list)
 
 
@@ -93,6 +99,73 @@ class EvalReport:
         passed = sum(1 for result in self.results if result.passed)
         summary = f"{passed}/{len(self.results)} scenarios passed"
         return f"{body}\n{summary}" if body else summary
+
+
+def format_turn_table(report: EvalReport) -> str:
+    """Pass/fail rows: scenario, turn, expected vs actual speech and status."""
+    header = (
+        "result",
+        "scenario",
+        "turn",
+        "speech_expected",
+        "speech_actual",
+        "status_expected",
+        "status_actual",
+    )
+    rows: list[tuple[str, ...]] = [header]
+    for result in report.results:
+        for score in result.turns:
+            rows.append(
+                (
+                    "PASS" if score.passed else "FAIL",
+                    result.scenario_id,
+                    score.turn_id,
+                    score.expected_speech,
+                    score.actual_speech if score.has_result else "error",
+                    _status_cell(
+                        score.expected_status,
+                        checked=score.status_checked,
+                        has_result=True,
+                    ),
+                    _status_cell(
+                        score.actual_status,
+                        checked=True,
+                        has_result=score.has_result,
+                    ),
+                )
+            )
+    widths = [max(len(row[index]) for row in rows) for index in range(len(header))]
+    lines: list[str] = []
+    for index, row in enumerate(rows):
+        lines.append("  ".join(cell.ljust(widths[col]) for col, cell in enumerate(row)))
+        if index == 0:
+            lines.append("  ".join("-" * widths[col] for col in range(len(header))))
+    turn_count = sum(len(result.turns) for result in report.results)
+    passed_turns = sum(
+        1 for result in report.results for score in result.turns if score.passed
+    )
+    passed_scenarios = sum(1 for result in report.results if result.passed)
+    lines.append("")
+    lines.append(
+        f"{passed_turns}/{turn_count} turns passed; "
+        f"{passed_scenarios}/{len(report.results)} scenarios passed"
+    )
+    if not report.passed:
+        lines.append("")
+        for result in report.results:
+            for failure in result.failures:
+                lines.append(f"FAIL {failure.message}")
+    return "\n".join(lines)
+
+
+def _status_cell(status: Optional[str], *, checked: bool, has_result: bool) -> str:
+    if not has_result:
+        return "error"
+    if not checked:
+        return "-"
+    if status is None:
+        return "none"
+    return status
 
 
 def fixture_pipeline(_scenario: Scenario) -> BrainPipeline:
@@ -148,9 +221,7 @@ def run_scenario(
                 )
             )
             failures.extend(turn_failures)
-            scores.append(
-                TurnScore(turn_id=turn.turn_id, passed=False, failures=turn_failures)
-            )
+            scores.append(_unrun_score(turn, turn_failures))
             break
 
         commitment_ids[turn.turn_id] = (
@@ -165,6 +236,12 @@ def run_scenario(
             TurnScore(
                 turn_id=turn.turn_id,
                 passed=not turn_failures,
+                expected_speech=turn.expect.speech_action,
+                actual_speech=result.speech_action,
+                expected_status=turn.expect.status,
+                status_checked=turn.expect.check_status,
+                actual_status=_status_name(result),
+                has_result=True,
                 failures=list(turn_failures),
             )
         )
@@ -218,6 +295,30 @@ def _decode(path: Path) -> object:
         raise ScenarioFormatError(f"{path}: invalid YAML: {exc}") from exc
 
 
+def _unrun_score(turn: ScenarioTurn, failures: list[Failure]) -> TurnScore:
+    return TurnScore(
+        turn_id=turn.turn_id,
+        passed=False,
+        expected_speech=turn.expect.speech_action,
+        actual_speech=None,
+        expected_status=turn.expect.status,
+        status_checked=turn.expect.check_status,
+        actual_status=None,
+        has_result=False,
+        failures=list(failures),
+    )
+
+
+def _status_name(result: TurnResult) -> Optional[str]:
+    commitment = result.commitment
+    if commitment is None:
+        return None
+    raw_status = commitment.status
+    if hasattr(raw_status, "value"):
+        return str(raw_status.value)
+    return str(raw_status)
+
+
 def _turn_input(scenario: Scenario, turn: ScenarioTurn) -> TurnInput:
     return TurnInput(
         session_id=scenario.session_id,
@@ -238,10 +339,7 @@ def _score_turn(
     expect = turn.expect
     failures: list[Failure] = []
     commitment = result.commitment
-    status = None
-    if commitment is not None:
-        raw_status = commitment.status
-        status = raw_status.value if hasattr(raw_status, "value") else str(raw_status)
+    status = _status_name(result)
 
     def mismatch(field_name: str, expected: object, actual: object) -> None:
         failures.append(
@@ -256,7 +354,9 @@ def _score_turn(
     if result.speech_action != expect.speech_action:
         mismatch("speech_action", expect.speech_action, result.speech_action)
 
-    if expect.status is not None and status != expect.status:
+    if expect.check_status and expect.status is None and commitment is not None:
+        mismatch("status", "none", status)
+    elif expect.check_status and expect.status is not None and status != expect.status:
         if commitment is None:
             failures.append(
                 Failure(
@@ -269,6 +369,17 @@ def _score_turn(
             )
         else:
             mismatch("status", expect.status, status)
+
+    if expect.skipped_by_filter is not None and result.skipped_by_filter != expect.skipped_by_filter:
+        mismatch("skipped_by_filter", expect.skipped_by_filter, result.skipped_by_filter)
+
+    if expect.filter_reason is not None and result.filter_reason != expect.filter_reason:
+        mismatch("filter_reason", expect.filter_reason, result.filter_reason)
+
+    if expect.clarification_count is not None:
+        actual_count = commitment.clarification_count if commitment is not None else None
+        if actual_count != expect.clarification_count:
+            mismatch("clarification_count", expect.clarification_count, actual_count)
 
     if expect.is_acknowledgement is not None:
         actual = commitment.is_acknowledgement if commitment is not None else None

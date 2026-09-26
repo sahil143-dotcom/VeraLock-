@@ -12,6 +12,7 @@ turns:
     expect:
       speech_action: CLARIFY
       status: AWAITING_CLARIFICATION
+      clarification_count: 1
       is_acknowledgement: false
       is_intention_only: false
       clarification_question_contains: budget-review
@@ -22,6 +23,7 @@ turns:
     expect:
       speech_action: SILENT
       status: CONFIRMED
+      clarification_count: 1
       is_acknowledgement: false
       is_intention_only: false
       clarification_question: null

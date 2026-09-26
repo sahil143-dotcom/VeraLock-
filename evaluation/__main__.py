@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from evaluation.harness import evaluate
+from evaluation.harness import evaluate, format_turn_table
 
 
 def main() -> int:
     report = evaluate()
-    print(report.render())
+    print(format_turn_table(report))
     return 0 if report.passed else 1
 
 

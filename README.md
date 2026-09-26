@@ -247,8 +247,10 @@ blocks auto-confirm, and each topic gets at most one clarification.
 
 ```bash
 pytest evaluation/
+python scripts/run_eval.py
 ```
 
-No API keys. Scenario format and the PersistHandoff end-to-end hook are in
+No API keys. `run_eval.py` prints a pass/fail table and exits non-zero on a
+mismatch. Scenario format and the PersistHandoff end-to-end hook are in
 `evaluation/README.md`.
 
