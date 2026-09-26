@@ -86,6 +86,7 @@ speech goes `SILENT`.
 intelligence/turn_filter.py       # cost/latency gate only; no semantic verdict
 intelligence/context.py           # last 6 turns, active commitments, speaker roles
 intelligence/reasoner.py          # one-shot structured A→G; StubLLM fixture mode
+intelligence/llm_adapter.py       # optional OpenAI-compatible chat client
 intelligence/guardrails.py        # ack, intention, intervened, clarification cap
 intelligence/clarification.py     # max one question per topic_id
 intelligence/pipeline.py          # wires the pieces; speech_action SILENT | CLARIFY
@@ -97,6 +98,51 @@ state/commitment_machine.py       # legal status transitions; illegal hops raise
 A→G is a single JSON object: actor, topic bind, surface class, canonical draft,
 evidence, flags, speech hint. The stub model is deterministic and uses no API
 key. Guardrails, not the model, set the final status and speech action.
+
+### Optional real LLM
+
+`BrainPipeline()` and `Reasoner()` stay on `StubLLM`. Fixture mode never reads
+API keys and never opens a network connection, so `pytest` stays offline.
+
+Turn fixture mode off to use a real model. The client is stdlib-only and
+speaks OpenAI-compatible `POST /chat/completions`. It sends one non-streaming
+completion with JSON mode (`response_format: {"type": "json_object"}`) and
+expects the same A→G object the stub returns. If neither key below is set,
+`fixture_mode=False` still falls back to `StubLLM`.
+
+```bash
+export VERALOCK_LLM_API_KEY=sk-...   # preferred; OPENAI_API_KEY also works
+export VERALOCK_LLM_MODEL=gpt-4o-mini
+export VERALOCK_LLM_BASE_URL=https://api.openai.com/v1
+```
+
+```python
+from intelligence.api import create_app
+from intelligence.pipeline import BrainPipeline
+
+pipeline = BrainPipeline(fixture_mode=False)
+app = create_app(pipeline=pipeline)
+```
+
+Set the key before constructing the pipeline. `VERALOCK_LLM_API_KEY` wins
+over `OPENAI_API_KEY` when both are set. `OPENAI_BASE_URL` and `OPENAI_MODEL`
+are used only when the matching `VERALOCK_LLM_*` variable is unset. The
+default model is `gpt-4o-mini` and the default base URL is
+`https://api.openai.com/v1` (the API root, not the full completions path).
+
+`VERALOCK_LLM_RESPONSE_FORMAT` selects the completion shape:
+
+| value | request |
+| --- | --- |
+| `json_object` (default) | JSON mode |
+| `json_schema` | structured output using the A→G schema (`strict: false`) |
+| `off` | omit `response_format` for servers that reject it |
+
+`VERALOCK_LLM_TIMEOUT` is a positive number of seconds (default 30). A
+transport failure or an unreadable completion becomes the ambiguous fallback
+(confidence 0, speech hint `CLARIFY`). Guardrails still choose the final
+status and speech action. An injected `llm` passed with `fixture_mode=False`
+is used as-is and the environment is not consulted.
 
 ### Tests
 
@@ -112,6 +158,9 @@ No API keys. Fixture mode is the default (`BrainPipeline()`).
 pip install fastapi uvicorn
 uvicorn intelligence.api:create_app --factory --port 8000
 ```
+
+That factory app stays in fixture mode. To serve a real model, construct the
+app from `BrainPipeline(fixture_mode=False)` as in the section above.
 
 `POST /v1/turn` accepts `session_id`, `turn_id`, `speaker_role`, `text`, and
 optional `intervened`, `created_at`, `active_commitments`, `conversation_id`,

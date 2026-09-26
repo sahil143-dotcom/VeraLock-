@@ -4,19 +4,27 @@ One prompt, one completion, one JSON object with keys A through G.
 `StubLLM` is deterministic and never reads API keys or the network.
 `Reasoner(fixture_mode=True)` always uses that stub so tests stay offline.
 
+`fixture_mode=False` with no injected client uses an OpenAI-compatible chat
+model when `VERALOCK_LLM_API_KEY` or `OPENAI_API_KEY` is set, and falls
+back to `StubLLM` when neither key is present.
+
 The trace is a proposal. Guardrails choose the status and the speech action.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any, Optional, Protocol
 
 from intelligence.context import ContextSnapshot
+from intelligence.llm_adapter import LLMAdapterError, client_from_env
 from intelligence.models import SILENT, ReasonerOutput, Surface
 from intelligence.turn_filter import normalize
 from shared.commitment_schema import Commitment, CommitmentStatus
+
+logger = logging.getLogger(__name__)
 
 _INPUT_RE = re.compile(r"<brain_input>\s*(.*?)\s*</brain_input>", re.DOTALL)
 
@@ -392,14 +400,22 @@ class StubLLM:
 
 
 class Reasoner:
-    """Single-shot A→G. Fixture mode forces StubLLM."""
+    """Single-shot A→G.
+
+    Fixture mode (the default) forces `StubLLM` and ignores both an injected
+    client and any API key in the environment. With `fixture_mode=False`, an
+    injected client wins; otherwise a key selects `OpenAICompatibleLLM` and a
+    missing key selects `StubLLM`.
+    """
 
     def __init__(self, llm: Optional[LLMClient] = None, *, fixture_mode: bool = True) -> None:
         self.fixture_mode = fixture_mode
-        if fixture_mode or llm is None:
+        if fixture_mode:
             self.llm: LLMClient = StubLLM()
-        else:
+        elif llm is not None:
             self.llm = llm
+        else:
+            self.llm = client_from_env() or StubLLM()
 
     def reason(
         self,
@@ -412,7 +428,11 @@ class Reasoner:
     ) -> ReasonerOutput:
         prompt = render_prompt(snapshot, text, turn_id, speaker_role, created_at)
         # The snapshot's recent_turns list is already capped at 6 by ContextWindow.
-        raw = self.llm.complete(prompt)
+        try:
+            raw = self.llm.complete(prompt)
+        except LLMAdapterError as exc:
+            logger.warning("Brain LLM request failed; using ambiguous fallback: %s", exc)
+            return _fallback(speaker_role, text, turn_id)
         try:
             return parse_ag(raw)
         except (ValueError, json.JSONDecodeError, KeyError, TypeError):
