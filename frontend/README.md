@@ -1,6 +1,6 @@
 # VeraLock demo UI
 
-Single-page demo that sends text turns to fixture-mode Brain (`POST /v1/turn`) and shows the `TurnResult`: speech action, clarification question, commitment fields, and session transcript. After each turn, Brain's persist handoff writes Vault rows into a temporary SQLite file. When a turn has a `commitment_id`, a demo-only route calls `evidence.provenance.get_commitment_evidence(commitment_id, conn)` on the same SQLite connection as `SqlitePersistSink`. If that row is missing, the panel skips quietly and the turn result stays on screen.
+Single-page demo that sends text turns to fixture-mode Brain (`POST /v1/turn`) and shows the `TurnResult`: speech action, clarification question, commitment fields, and session transcript. After each turn, Brain's persist handoff writes Vault rows into a temporary SQLite file. When a turn has a `commitment_id`, the panel calls Vault `GET /v1/evidence/{commitment_id}` on this same server (same SQLite connection as `SqlitePersistSink`). If that route is not present, it falls back to an in-process `get_commitment_evidence` lookup. A missing row skips the panel quietly.
 
 No API keys. The demo entrypoint does not modify `intelligence/`.
 
@@ -30,7 +30,7 @@ python frontend/demo_server.py --host 127.0.0.1 --port 8000 --db /tmp/veralock-d
 - **Send turn** posts `session_id`, `turn_id`, `speaker_role`, `text`, `created_at`, `intervened`, and any active commitments from earlier turns in the session.
 - The last response shows `speech_action` (`SILENT` or `CLARIFY`), `clarification_question` when Brain asks one, and commitment `status`, `canonical_text`, `topic_id`, `is_acknowledgement`, and `is_intention_only`.
 - The transcript keeps every turn in the session so a multi-turn demo stays readable (stored in this browser).
-- **Vault evidence** loads when `commitment_id` is present. If SQLite has no row yet, the panel says so and the turn result stays on screen.
+- **Kept** loads when `commitment_id` is present, via Vault `GET /v1/evidence/{commitment_id}`. If SQLite has no row yet, the panel stays quiet and the turn result remains.
 - Filter skip and `policy_notes` are in the **Debug** disclosure on the last response. It opens automatically when the cost gate skips the turn.
 
 ## Sample prompts
@@ -77,8 +77,10 @@ After a clear commitment, `GET /v1/demo/status` shows `db_path`. That file has a
 | --- | --- | --- |
 | `GET` | `/` | Demo page |
 | `GET` | `/health` | Brain health (`{"status":"ok","component":"brain"}`) |
+| `GET` | `/v1/health` | Vault evidence health, when `evidence.api` is present |
 | `POST` | `/v1/turn` | Brain turn (`TurnResult` JSON) |
-| `GET` | `/v1/demo/evidence/{commitment_id}` | Demo-only. Calls `get_commitment_evidence` in-process. `available: false` if the row is missing |
+| `GET` | `/v1/evidence/{commitment_id}` | Vault provenance. 404 if the row is missing; the page skips the panel |
+| `GET` | `/v1/demo/evidence/{commitment_id}` | In-process `get_commitment_evidence` fallback. `available: false` if the row is missing |
 | `GET` | `/v1/sessions/{session_id}` | Stored turns and commitments for the session |
 | `GET` | `/v1/demo/status` | Fixture flag and SQLite path |
 

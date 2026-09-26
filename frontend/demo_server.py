@@ -72,6 +72,31 @@ def _commitments_for_session(conn: sqlite3.Connection, session_id: str) -> list[
     return [CommitmentRow.from_row(row) for row in cur.fetchall()]
 
 
+def _attach_vault_evidence_http(app: Any, conn: sqlite3.Connection) -> bool:
+    """Mount Vault's GET /v1/evidence/{id} and GET /v1/health when that app exists.
+
+    The routes stay Vault's. They share the same SQLite connection as the persist
+    sink. Returns False when evidence.api cannot be imported, so the demo can
+    fall back to an in-process lookup.
+    """
+    try:
+        from evidence.api import create_evidence_app
+    except ImportError:
+        return False
+
+    vault = create_evidence_app(conn=conn)
+    attached = False
+    for route in vault.routes:
+        path = getattr(route, "path", "")
+        methods = getattr(route, "methods", None) or set()
+        if "GET" in methods and path in {"/v1/evidence/{commitment_id}", "/v1/health"}:
+            app.router.routes.append(route)
+            attached = True
+    if attached:
+        app.state.evidence_app = vault
+    return attached
+
+
 def create_demo_app(db_path: str | Path | None = None):
     """Serve the UI and fixture Brain, persisting each turn into SQLite."""
     from fastapi import FastAPI
@@ -81,6 +106,7 @@ def create_demo_app(db_path: str | Path | None = None):
     path = Path(db_path) if db_path is not None else new_temp_db()
     conn = open_demo_db(path)
     app: FastAPI = create_app(persist=SqlitePersistSink(conn))
+    evidence_http = _attach_vault_evidence_http(app, conn)
 
     @app.get("/")
     def index() -> FileResponse:
@@ -94,14 +120,14 @@ def create_demo_app(db_path: str | Path | None = None):
             "fixture_mode": True,
             "persist": "SqlitePersistSink",
             "db_path": str(path),
+            "evidence_http": evidence_http,
         }
 
     @app.get("/v1/demo/evidence/{commitment_id}")
     def evidence(commitment_id: str) -> dict[str, Any]:
-        """Demo-only provenance. Uses the same SQLite connection as the persist sink.
+        """In-process fallback. The panel prefers Vault ``GET /v1/evidence/{id}``.
 
-        Missing rows are a soft skip: the turn result still stands, and this
-        route does not define a Vault HTTP API.
+        Missing rows are a soft skip. This route is not a second Vault API.
         """
         try:
             payload = get_commitment_evidence(commitment_id, conn)

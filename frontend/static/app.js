@@ -312,18 +312,37 @@
     }
   }
 
+  function asEvidence(body) {
+    if (!body || body.available === false) {
+      return {
+        available: false,
+        detail: (body && body.detail) || "No Vault row for this commitment yet.",
+      };
+    }
+    if (body.commitment) return Object.assign({ available: true }, body);
+    return null;
+  }
+
+  async function readEvidence(url) {
+    const response = await fetch(url);
+    const body = await response.json().catch(() => ({}));
+    if (response.ok) return { route: true, evidence: asEvidence(body) };
+    const detail = typeof body.detail === "string" ? body.detail : "";
+    if (response.status === 404 && detail.indexOf("commitment not found") === 0) {
+      return { route: true, evidence: { available: false, detail: "No Vault row for this commitment yet." } };
+    }
+    return { route: false, evidence: null };
+  }
+
   async function loadEvidence(commitmentId) {
     if (!commitmentId) return { available: false, detail: "This turn has no commitment id." };
+    const missing = { available: false, detail: "No Vault row for this commitment yet." };
     try {
-      const response = await fetch(`/v1/demo/evidence/${encodeURIComponent(commitmentId)}`);
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok || body.available === false) {
-        return {
-          available: false,
-          detail: body.detail || "No Vault row for this commitment yet.",
-        };
-      }
-      return Object.assign({ available: true }, body);
+      const primary = await readEvidence(`/v1/evidence/${encodeURIComponent(commitmentId)}`);
+      if (primary.route) return primary.evidence || missing;
+      const fallback = await readEvidence(`/v1/demo/evidence/${encodeURIComponent(commitmentId)}`);
+      if (fallback.route) return fallback.evidence || missing;
+      return { available: false, detail: "The trail could not be read. The turn is still here." };
     } catch (_err) {
       return { available: false, detail: "The trail could not be read. The turn is still here." };
     }
