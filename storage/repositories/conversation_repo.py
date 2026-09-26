@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import uuid
 from typing import Optional
 
 from storage.models import ConversationRow
@@ -39,3 +40,49 @@ class ConversationRepo:
         )
         row = cur.fetchone()
         return ConversationRow.from_row(row) if row else None
+
+    def get_by_session_id(self, session_id: str) -> Optional[ConversationRow]:
+        """Return the most recently created conversation for a Brain session_id."""
+        cur = self._conn.execute(
+            """
+            SELECT * FROM conversations
+            WHERE session_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (session_id,),
+        )
+        row = cur.fetchone()
+        return ConversationRow.from_row(row) if row else None
+
+    def ensure_for_session(
+        self,
+        session_id: str,
+        created_at: str,
+        conversation_id: Optional[str] = None,
+        title: Optional[str] = None,
+    ) -> ConversationRow:
+        """Resolve conversation_id if given; else find-or-create by session_id."""
+        if conversation_id:
+            existing = self.get(conversation_id)
+            if existing is not None:
+                return existing
+            return self.create(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                title=title,
+                created_at=created_at,
+                updated_at=created_at,
+            )
+
+        by_session = self.get_by_session_id(session_id)
+        if by_session is not None:
+            return by_session
+
+        return self.create(
+            conversation_id=str(uuid.uuid4()),
+            session_id=session_id,
+            title=title,
+            created_at=created_at,
+            updated_at=created_at,
+        )

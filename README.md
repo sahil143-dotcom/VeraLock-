@@ -21,7 +21,18 @@ followup/scheduler.py         # due follow-ups vs (warped) now
 followup/messages.py          # template messages (no LLM)
 followup/time_warp.py         # FAST-FORWARD 48h override of now
 scripts/smoke_vault.py        # end-to-end smoke test
+shared/persist_handoff.py     # PersistHandoff + PersistPort (Brain→Vault)
+storage/persist_sink.py       # SqlitePersistSink (Vault PersistPort)
+scripts/smoke_persist_handoff.py
 ```
+
+### Brain → Vault persist handoff
+
+Brain emits a `PersistHandoff` (see `shared/persist_handoff.py`) after each
+`TurnResult`. Vault implements `PersistPort` via `SqlitePersistSink`, which
+ensures conversation/turn rows and upserts commitments through the existing
+repos. Brain never imports `storage/`; default sink is `NullPersistPort`.
+
 
 ### Status enum (UPPER_SNAKE)
 
