@@ -238,4 +238,17 @@ Expects exit 0. Prints a sample turn payload from the text-first path and from
 `FakeCapture` + `StubAsrAdapter`. If `intelligence.api.handle_turn_payload`
 imports cleanly, the script also posts the text turn and prints the Brain result.
 
+## Evaluation
+
+Judge owns `evaluation/`. Golden dialogs score Brain in fixture mode against
+the rules above: a clear commitment is `CONFIRMED` and `SILENT`, an
+acknowledgement or intention is `NO_COMMITMENT` and `SILENT`, `intervened`
+blocks auto-confirm, and each topic gets at most one clarification.
+
+```bash
+pytest evaluation/
+```
+
+No API keys. Scenario format and the PersistHandoff end-to-end hook are in
+`evaluation/README.md`.
 

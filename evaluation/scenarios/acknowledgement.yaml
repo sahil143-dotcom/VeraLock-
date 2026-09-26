@@ -1,0 +1,27 @@
+id: acknowledgement
+title: Acknowledgement is not a commitment
+description: >
+  Short acknowledgements stay NO_COMMITMENT and SILENT, with
+  is_acknowledgement set. They do not confirm anything.
+session_id: sess-acknowledgement
+turns:
+  - turn_id: turn-1
+    speaker_role: user
+    text: "Got it."
+    created_at: "2026-09-26T00:00:00Z"
+    expect:
+      speech_action: SILENT
+      status: NO_COMMITMENT
+      is_acknowledgement: true
+      is_intention_only: false
+      clarification_question: null
+  - turn_id: turn-2
+    speaker_role: user
+    text: "sounds good"
+    created_at: "2026-09-26T00:01:00Z"
+    expect:
+      speech_action: SILENT
+      status: NO_COMMITMENT
+      is_acknowledgement: true
+      is_intention_only: false
+      clarification_question: null

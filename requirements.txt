@@ -6,3 +6,6 @@ pytest>=8.0
 fastapi>=0.115
 httpx>=0.27
 uvicorn>=0.32
+
+# Golden dialogs in evaluation/scenarios/*.yaml.
+pyyaml>=6.0
