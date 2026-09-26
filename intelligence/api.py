@@ -14,14 +14,22 @@ from shared.commitment_schema import Commitment
 from intelligence.clock import now_iso
 from intelligence.models import TurnInput
 from intelligence.pipeline import BrainPipeline
+from shared.persist_handoff import PersistPort
 
 _default_pipeline: BrainPipeline | None = None
 
 
-def get_pipeline() -> BrainPipeline:
+def get_pipeline(persist: Optional[PersistPort] = None) -> BrainPipeline:
+    """Return the process pipeline, creating it on first use.
+
+    Pass `persist` to install a sink. A later non-null `persist` replaces the
+    sink on the existing pipeline. POST /v1/turn still returns only TurnResult.
+    """
     global _default_pipeline
     if _default_pipeline is None:
-        _default_pipeline = BrainPipeline(fixture_mode=True)
+        _default_pipeline = BrainPipeline(fixture_mode=True, persist=persist)
+    elif persist is not None:
+        _default_pipeline.persist = persist
     return _default_pipeline
 
 
@@ -46,6 +54,11 @@ def handle_turn_payload(
         else:
             raise ValueError("active_commitments entries must be objects")
 
+    raw_conversation = payload.get("conversation_id")
+    conversation_id = str(raw_conversation).strip() if raw_conversation else None
+    raw_reason = payload.get("intervention_reason")
+    intervention_reason = str(raw_reason).strip() if raw_reason else None
+
     incoming = TurnInput(
         session_id=str(payload["session_id"]),
         turn_id=str(payload["turn_id"]),
@@ -54,13 +67,23 @@ def handle_turn_payload(
         created_at=str(payload.get("created_at") or now_iso()),
         intervened=bool(payload.get("intervened", False)),
         active_commitments=commitments,
+        conversation_id=conversation_id or None,
+        intervention_reason=intervention_reason or None,
     )
     brain = pipeline or get_pipeline()
     return brain.handle_turn(incoming).to_dict()
 
 
-def create_app(pipeline: Optional[BrainPipeline] = None):
-    """Build a FastAPI app with POST /v1/turn and GET /health."""
+def create_app(
+    pipeline: Optional[BrainPipeline] = None,
+    persist: Optional[PersistPort] = None,
+):
+    """Build a FastAPI app with POST /v1/turn and GET /health.
+
+    Pass `persist` to install a Vault sink. When `pipeline` is omitted, a
+    fixture-mode pipeline is created with that sink. When both are passed,
+    `persist` replaces the pipeline sink. The response body stays TurnResult.
+    """
     try:
         from fastapi import FastAPI, HTTPException
         from pydantic import BaseModel, Field
@@ -69,7 +92,12 @@ def create_app(pipeline: Optional[BrainPipeline] = None):
             "FastAPI is not installed. Install the brain extra: pip install fastapi"
         ) from exc
 
-    brain = pipeline or BrainPipeline(fixture_mode=True)
+    if pipeline is None:
+        brain = BrainPipeline(fixture_mode=True, persist=persist)
+    else:
+        brain = pipeline
+        if persist is not None:
+            brain.persist = persist
 
     class TurnIn(BaseModel):
         session_id: str
@@ -79,6 +107,8 @@ def create_app(pipeline: Optional[BrainPipeline] = None):
         created_at: str | None = None
         intervened: bool = False
         active_commitments: list[dict[str, Any]] = Field(default_factory=list)
+        conversation_id: str | None = None
+        intervention_reason: str | None = None
 
     app = FastAPI(title="VeraLock Brain", version="0.1.0")
     app.state.pipeline = brain

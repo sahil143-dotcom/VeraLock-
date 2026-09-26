@@ -89,6 +89,7 @@ intelligence/reasoner.py          # one-shot structured A→G; StubLLM fixture m
 intelligence/guardrails.py        # ack, intention, intervened, clarification cap
 intelligence/clarification.py     # max one question per topic_id
 intelligence/pipeline.py          # wires the pieces; speech_action SILENT | CLARIFY
+intelligence/persist.py           # maps TurnInput/TurnResult onto PersistHandoff
 intelligence/api.py               # POST /v1/turn (FastAPI-compatible)
 state/commitment_machine.py       # legal status transitions; illegal hops raise
 ```
@@ -113,8 +114,37 @@ uvicorn intelligence.api:create_app --factory --port 8000
 ```
 
 `POST /v1/turn` accepts `session_id`, `turn_id`, `speaker_role`, `text`, and
-optional `intervened`, `created_at`, and `active_commitments`.
+optional `intervened`, `created_at`, `active_commitments`, `conversation_id`,
+and `intervention_reason`.
 `GET /health` returns the Brain component check.
 
 `handle_turn_payload` in `intelligence/api.py` is the same entry without HTTP.
+
+### Persist handoff
+
+After every turn, including filter skips, `BrainPipeline` builds a
+`PersistHandoff` and calls `PersistPort.persist`. The payload types
+(`PersistHandoff`, `Transition`, `PersistPort`, `NullPersistPort`) live in
+`shared/persist_handoff.py`. Brain imports that module and does not write
+`storage/`. The default port is `NullPersistPort`. `POST /v1/turn` still
+returns only the `TurnResult` dict; the handoff is a side effect.
+
+`intelligence/persist.py` `build_handoff(turn_input, turn_result, ...)` enforces
+the freeze rules: `session_id` is required; a non-null commitment has a
+non-empty `source_turn_ids` that includes `turn_id`; when a commitment is
+present, `transition.to_status` equals `commitment.status`. `from_status` is
+the status before apply on an update, and null on create. Filter skips send
+`commitment=null` and `to_status=NO_COMMITMENT`. `intervention_reason` is
+optional.
+
+```python
+from intelligence.api import create_app, get_pipeline
+from intelligence.persist import RecordingPersistSink
+from intelligence.pipeline import BrainPipeline
+
+sink = RecordingPersistSink()  # Vault supplies SqlitePersistSink at process start
+pipeline = BrainPipeline(persist=sink)
+app = create_app(persist=sink)
+get_pipeline(persist=sink)
+```
 

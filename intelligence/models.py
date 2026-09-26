@@ -25,6 +25,8 @@ class TurnInput:
     created_at: str
     intervened: bool = False
     active_commitments: list[Commitment] = field(default_factory=list)
+    conversation_id: Optional[str] = None
+    intervention_reason: Optional[str] = None
 
 
 @dataclass(frozen=True)
