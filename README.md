@@ -148,36 +148,43 @@ app = create_app(persist=sink)
 get_pipeline(persist=sink)
 ```
 
-## Voice (capture, ASR, turn emit)
+## Voice (audio → text turn)
 
-Voice turns a microphone stub, an in-memory stream, or plain text into the
-JSON body for `POST /v1/turn`. Audio stays in Voice. Brain receives text only
-and does not import `voice/`. Voice does not import Brain models; it emits
-dicts with Brain's turn field names.
+Voice turns audio or plain text into the JSON body for `POST /v1/turn`.
+Audio stays in Voice. Brain receives text only and does not import `voice/`.
+Voice does not import Brain.
 
-The default demo is text-first: no microphone, no ASR model, no API key, no
-network. `FakeCapture` and `StubAsrAdapter` cover the capture → transcript
-path in CI.
+CI and demos use `StubASR` (canned transcript, no network, no API key).
+`build_turn` is the text-first path: a string in, a turn body out, no ASR.
+
+The optional OpenAI Whisper adapter runs only when both are set:
+
+- `VERALOCK_VOICE_ASR=openai` or `VERALOCK_VOICE_ASR=whisper`
+- `OPENAI_API_KEY`
+
+If either is missing, `turn_audio_adapter_from_env()` stays on `StubASR`.
+Optional overrides: `OPENAI_TRANSCRIBE_MODEL` (default `whisper-1`),
+`OPENAI_BASE_URL`. No Whisper SDK is required for the default path.
 
 ### Layout
 
 ```
-voice/capture.py        # MicCapture, StreamCapture, FakeCapture
-voice/asr.py            # AsrAdapter + StubAsrAdapter (canned transcript)
-voice/turn_emit.py      # build_turn_payload; session_id / turn_id helpers
-voice/pipeline.py       # VoicePipeline.emit_text; optional capture → ASR
-scripts/smoke_voice.py  # offline smoke test
+voice/turn_audio.py     # TurnAudioAdapter, StubASR, OpenAIWhisperAdapter
+voice/turn_builder.py   # build_turn → {session_id, turn_id, speaker_role, text, created_at?}
+voice/capture.py        # MicCapture, StreamCapture, FakeCapture (no live device)
+voice/pipeline.py       # emit_text; optional capture → adapter → build_turn
+scripts/smoke_voice.py  # StubASR → printed turn payload
 ```
 
 ### Turn body
 
-Required: `session_id`, `turn_id`, `speaker_role`, `text`.
-Optional: `created_at`, `intervened`, `active_commitments`, and, when set,
-`conversation_id` and `intervention_reason`.
-`speaker_role` is a free string (`"user"` in the smoke script).
-`new_session_id()` is reused across turns; `new_turn_id()` is unique per turn.
-`active_commitments` entries are passed through as dicts. Voice does not rename
-Brain commitment fields.
+`build_turn` emits `session_id`, `turn_id`, `speaker_role`, and `text`.
+`created_at` is included only when passed. `speaker_role` is a free string
+(`"user"` in the smoke script). `new_session_id()` is reused across turns;
+`new_turn_id()` is unique per turn.
+
+`TurnAudioAdapter.transcribe` accepts audio `bytes` or a filesystem path and
+returns text. That text is the `text` field. The turn JSON has no audio key.
 
 ### Smoke test
 
@@ -185,8 +192,9 @@ Brain commitment fields.
 python scripts/smoke_voice.py
 ```
 
-Expects exit 0. Prints a sample turn payload from the text-first path and from
-`FakeCapture` + `StubAsrAdapter`. If `intelligence.api.handle_turn_payload`
-imports cleanly, the script also posts the text turn and prints the Brain result.
+Expects exit 0 offline. Prints the turn payload from `StubASR`, then a
+text-first payload with `created_at` omitted. Brain is not required. If
+`handle_turn_payload` imports, the script also posts the stub turn and prints
+`speech_action`.
 
 
