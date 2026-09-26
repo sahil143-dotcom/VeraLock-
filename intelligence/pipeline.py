@@ -10,22 +10,31 @@ import uuid
 from typing import Optional
 
 from shared.commitment_schema import Commitment, CommitmentStatus
+from shared.persist_handoff import NullPersistPort, PersistPort
 
 from intelligence.clarification import ClarificationLedger
 from intelligence.clock import now_iso
 from intelligence.context import ContextWindow, Turn, as_status
 from intelligence.guardrails import decide
 from intelligence.models import SILENT, PolicyDecision, ReasonerOutput, TurnInput, TurnResult
+from intelligence.persist import build_handoff
 from intelligence.reasoner import Reasoner
 from intelligence.turn_filter import gate
 from state.commitment_machine import CommitmentMachine
 
 
 class BrainPipeline:
-    def __init__(self, *, fixture_mode: bool = True, llm: object | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        fixture_mode: bool = True,
+        llm: object | None = None,
+        persist: PersistPort | None = None,
+    ) -> None:
         self.reasoner = Reasoner(llm=llm, fixture_mode=fixture_mode)  # type: ignore[arg-type]
         self.machine = CommitmentMachine()
         self.clarifications = ClarificationLedger()
+        self.persist: PersistPort = persist if persist is not None else NullPersistPort()
         self._contexts: dict[str, ContextWindow] = {}
 
     def context_for(self, session_id: str) -> ContextWindow:
@@ -59,7 +68,7 @@ class BrainPipeline:
             )
 
         if not decision.proceed:
-            return TurnResult(
+            result = TurnResult(
                 speech_action=SILENT,
                 commitment=None,
                 clarification_question=None,
@@ -68,6 +77,8 @@ class BrainPipeline:
                 policy_notes=["filter_skip"],
                 reasoning=None,
             )
+            self._emit(incoming, result, previous_status=None)
+            return result
 
         snapshot = window.snapshot()
         proposal = self.reasoner.reason(
@@ -91,11 +102,13 @@ class BrainPipeline:
         )
         policy = self._enforce_cap(policy, proposal, incoming.session_id)
 
-        commitment = self._apply(incoming, proposal, policy, existing, window)
+        commitment, previous_status = self._apply(
+            incoming, proposal, policy, existing, window
+        )
         if commitment.status != CommitmentStatus.NO_COMMITMENT:
             window.upsert(commitment)
 
-        return TurnResult(
+        result = TurnResult(
             speech_action=policy.speech_action,
             commitment=commitment,
             clarification_question=policy.clarification_question,
@@ -104,6 +117,25 @@ class BrainPipeline:
             policy_notes=list(policy.notes),
             reasoning=proposal,
         )
+        self._emit(incoming, result, previous_status=previous_status)
+        return result
+
+    def _emit(
+        self,
+        incoming: TurnInput,
+        result: TurnResult,
+        *,
+        previous_status: Optional[str],
+    ) -> None:
+        """Side effect only. The returned TurnResult is unchanged."""
+        handoff = build_handoff(
+            incoming,
+            result,
+            previous_status=previous_status,
+            conversation_id=incoming.conversation_id,
+            intervention_reason=incoming.intervention_reason,
+        )
+        self.persist.persist(handoff)
 
     def _enforce_cap(
         self,
@@ -182,7 +214,8 @@ class BrainPipeline:
         policy: PolicyDecision,
         existing: Optional[Commitment],
         window: ContextWindow,
-    ) -> Commitment:
+    ) -> tuple[Commitment, Optional[str]]:
+        """Apply policy. The second value is the status before apply, or null on create."""
         status = as_status(policy.status)
         target: Optional[Commitment] = None
         if policy.apply_to_existing:
@@ -240,16 +273,20 @@ class BrainPipeline:
                 updated_at=incoming.created_at or now_iso(),
                 session_id=incoming.session_id,
             )
-            return self.machine.create(created)
+            return self.machine.create(created), None
 
         # Keep the canonical text of an open commitment when the new turn is a
         # short restatement that still binds; prefer the clearer proposal text
         # when we are confirming or first recording.
         if status == CommitmentStatus.UNRESOLVED_AMBIGUOUS and target.canonical_text:
             fields["canonical_text"] = target.canonical_text
-        return self.machine.transition(
-            target,
-            status,
-            updated_at=incoming.created_at or now_iso(),
-            **fields,
+        from_status = as_status(target.status).value
+        return (
+            self.machine.transition(
+                target,
+                status,
+                updated_at=incoming.created_at or now_iso(),
+                **fields,
+            ),
+            from_status,
         )
