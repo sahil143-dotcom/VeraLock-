@@ -270,4 +270,19 @@ text-first payload with `created_at` omitted. Brain is not required. If
 `handle_turn_payload` imports, the script also posts the stub turn and prints
 `speech_action`.
 
+## Evaluation
+
+Judge owns `evaluation/`. Golden dialogs score Brain in fixture mode against
+the rules above: a clear commitment is `CONFIRMED` and `SILENT`, an
+acknowledgement or intention is `NO_COMMITMENT` and `SILENT`, `intervened`
+blocks auto-confirm, and each topic gets at most one clarification.
+
+```bash
+pytest evaluation/
+python scripts/run_eval.py
+```
+
+No API keys. `run_eval.py` prints a pass/fail table and exits non-zero on a
+mismatch. Scenario format and the PersistHandoff end-to-end hook are in
+`evaluation/README.md`.
 
