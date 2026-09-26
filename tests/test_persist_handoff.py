@@ -9,10 +9,9 @@ import pytest
 
 from intelligence.api import create_app, get_pipeline, handle_turn_payload
 from intelligence.models import SILENT, TurnInput, TurnResult
-from intelligence.persist import RecordingPersistSink, build_handoff
 from intelligence.pipeline import BrainPipeline
 from shared.commitment_schema import Commitment, CommitmentStatus
-from shared.persist_handoff import NullPersistPort, PersistHandoff
+from shared.persist_handoff import NullPersistPort, PersistHandoff, PersistPort, build_handoff
 
 BRAIN_FIELDS = [
     "commitment_id",
@@ -32,6 +31,23 @@ BRAIN_FIELDS = [
     "updated_at",
     "session_id",
 ]
+
+class RecordingPersistSink(PersistPort):
+    """In-test sink. Production wiring uses Vault's PersistPort."""
+
+    def __init__(self) -> None:
+        self.handoffs: list[PersistHandoff] = []
+
+    def persist(self, handoff: PersistHandoff) -> None:
+        self.handoffs.append(handoff)
+
+
+def run(incoming: TurnInput) -> tuple[TurnResult, PersistHandoff]:
+    sink = RecordingPersistSink()
+    result = BrainPipeline(persist=sink).handle_turn(incoming)
+    assert len(sink.handoffs) == 1
+    return result, sink.handoffs[0]
+
 
 TURN_RESULT_KEYS = {
     "speech_action",
@@ -100,8 +116,7 @@ def test_default_pipeline_uses_null_persist_port():
 
 def test_build_handoff_ack_no_commitment():
     incoming = turn("Got it.")
-    result = BrainPipeline().handle_turn(incoming)
-    handoff = build_handoff(incoming, result)
+    result, handoff = run(incoming)
 
     assert handoff.speech_action == "SILENT"
     assert handoff.skipped_by_filter is False
@@ -120,8 +135,23 @@ def test_build_handoff_ack_no_commitment():
 
 def test_build_handoff_clear_confirmed_create():
     incoming = turn("I will send the proposal by Friday.")
-    result = BrainPipeline().handle_turn(incoming)
-    handoff = build_handoff(incoming, result)
+    result, handoff = run(incoming)
+    direct = build_handoff(
+        session_id=incoming.session_id,
+        turn_id=incoming.turn_id,
+        speaker_role=incoming.speaker_role,
+        turn_text=incoming.text,
+        created_at=incoming.created_at,
+        speech_action=result.speech_action,
+        from_status=None,
+        to_status="CONFIRMED",
+        clarification_question=result.clarification_question,
+        skipped_by_filter=False,
+        policy_notes=result.policy_notes,
+        commitment=result.commitment.to_dict() if result.commitment else None,
+        intervened_this_turn=False,
+    )
+    assert handoff.to_dict() == direct.to_dict()
 
     assert handoff.speech_action == "SILENT"
     assert handoff.commitment is not None
@@ -136,8 +166,7 @@ def test_build_handoff_clear_confirmed_create():
 
 def test_build_handoff_clarify():
     incoming = turn("I'll handle the budget review soon.", turn_id="turn-a")
-    result = BrainPipeline().handle_turn(incoming)
-    handoff = build_handoff(incoming, result)
+    result, handoff = run(incoming)
 
     assert handoff.speech_action == "CLARIFY"
     assert handoff.clarification_question
@@ -151,8 +180,7 @@ def test_build_handoff_clarify():
 
 def test_build_handoff_filter_skip_has_null_commitment():
     incoming = turn("um", turn_id="turn-filler")
-    result = BrainPipeline().handle_turn(incoming)
-    handoff = build_handoff(incoming, result, previous_status="CONFIRMED")
+    result, handoff = run(incoming)
 
     assert result.commitment is None
     assert handoff.skipped_by_filter is True
@@ -171,8 +199,7 @@ def test_build_handoff_intervened_this_turn():
         intervened=True,
         intervention_reason="user asked to hold",
     )
-    result = BrainPipeline().handle_turn(incoming)
-    handoff = build_handoff(incoming, result)
+    result, handoff = run(incoming)
 
     assert handoff.intervened_this_turn is True
     assert handoff.intervention_reason == "user asked to hold"
@@ -187,26 +214,28 @@ def test_build_handoff_intervened_this_turn():
 
 def test_session_id_is_required():
     incoming = turn("Got it.", session_id="  ")
-    result = _result(_commitment())
+    pipeline = BrainPipeline()
     with pytest.raises(ValueError, match="session_id"):
-        build_handoff(incoming, result)
+        pipeline._emit(incoming, _result(_commitment()), previous_status=None)
 
 
 def test_commitment_source_turn_ids_must_include_turn_id():
     incoming = turn("I will send the proposal by Friday.", turn_id="turn-9")
-    empty = _result(_commitment(source_turn_ids=[]))
+    pipeline = BrainPipeline()
     with pytest.raises(ValueError, match="source_turn_ids"):
-        build_handoff(incoming, empty)
+        pipeline._emit(incoming, _result(_commitment(source_turn_ids=[])), previous_status=None)
 
-    other = _result(_commitment(source_turn_ids=["turn-0"]))
     with pytest.raises(ValueError, match="turn_id"):
-        build_handoff(incoming, other)
+        pipeline._emit(
+            incoming,
+            _result(_commitment(source_turn_ids=["turn-0"])),
+            previous_status=None,
+        )
 
 
 def test_commitment_status_matches_transition_to_status():
     incoming = turn("I will send the proposal by Friday.", conversation_id="conv-9")
-    result = BrainPipeline().handle_turn(incoming)
-    handoff = build_handoff(incoming, result, conversation_id="conv-9")
+    result, handoff = run(incoming)
     payload = handoff.to_dict()
     again = PersistHandoff.from_dict(payload)
 

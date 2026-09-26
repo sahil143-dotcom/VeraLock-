@@ -7,17 +7,16 @@ clarification cap → commitment state machine. Speech is only SILENT or CLARIFY
 from __future__ import annotations
 
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
 from shared.commitment_schema import Commitment, CommitmentStatus
-from shared.persist_handoff import NullPersistPort, PersistPort
+from shared.persist_handoff import NullPersistPort, PersistHandoff, PersistPort, build_handoff
 
 from intelligence.clarification import ClarificationLedger
 from intelligence.clock import now_iso
 from intelligence.context import ContextWindow, Turn, as_status
 from intelligence.guardrails import decide
 from intelligence.models import SILENT, PolicyDecision, ReasonerOutput, TurnInput, TurnResult
-from intelligence.persist import build_handoff
 from intelligence.reasoner import Reasoner
 from intelligence.turn_filter import gate
 from state.commitment_machine import CommitmentMachine
@@ -127,13 +126,41 @@ class BrainPipeline:
         *,
         previous_status: Optional[str],
     ) -> None:
-        """Side effect only. The returned TurnResult is unchanged."""
-        handoff = build_handoff(
-            incoming,
-            result,
-            previous_status=previous_status,
-            conversation_id=incoming.conversation_id,
-            intervention_reason=incoming.intervention_reason,
+        """Side effect only. The returned TurnResult is unchanged.
+
+        Calls `shared.persist_handoff.build_handoff`. `session_id` is required.
+        A commitment must carry a non-empty `source_turn_ids` that includes
+        this turn, and `transition.to_status` equals `commitment.status`.
+        """
+        session_id = _required_text(incoming.session_id, "session_id")
+        turn_id = str(incoming.turn_id)
+        if result.skipped_by_filter or result.commitment is None:
+            commitment = None
+            from_status = None
+            to_status = CommitmentStatus.NO_COMMITMENT.value
+        else:
+            commitment = dict(result.commitment.to_dict())
+            to_status = _enforce_commitment(commitment, turn_id)
+            from_status = _status_name(previous_status)
+        if commitment is not None and to_status != _status_name(commitment.get("status")):
+            raise ValueError("transition.to_status must equal commitment.status")
+
+        handoff: PersistHandoff = build_handoff(
+            session_id=session_id,
+            turn_id=turn_id,
+            speaker_role=incoming.speaker_role,
+            turn_text=incoming.text,
+            created_at=incoming.created_at,
+            speech_action=str(result.speech_action),
+            from_status=from_status,
+            to_status=to_status,
+            clarification_question=result.clarification_question,
+            skipped_by_filter=bool(result.skipped_by_filter),
+            policy_notes=list(result.policy_notes),
+            commitment=commitment,
+            intervened_this_turn=bool(incoming.intervened),
+            conversation_id=_optional_text(incoming.conversation_id),
+            intervention_reason=_optional_text(incoming.intervention_reason),
         )
         self.persist.persist(handoff)
 
@@ -290,3 +317,46 @@ class BrainPipeline:
             ),
             from_status,
         )
+
+
+def _enforce_commitment(commitment: dict[str, Any], turn_id: str) -> str:
+    """Return the commitment status. Reject a row Vault cannot store."""
+    status = _status_name(commitment.get("status"))
+    if not status:
+        raise ValueError("commitment.status is required")
+    commitment["status"] = status
+    raw_ids = commitment.get("source_turn_ids")
+    if not isinstance(raw_ids, list) or not raw_ids:
+        raise ValueError("commitment.source_turn_ids must be non-empty")
+    source_turn_ids = [str(item) for item in raw_ids]
+    if not turn_id or turn_id not in source_turn_ids:
+        raise ValueError("commitment.source_turn_ids must include turn_id")
+    commitment["source_turn_ids"] = source_turn_ids
+    return status
+
+
+def _required_text(value: Any, field_name: str) -> str:
+    text = str(value).strip() if value is not None else ""
+    if not text:
+        raise ValueError(f"{field_name} is required")
+    return text
+
+
+def _optional_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _status_name(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, CommitmentStatus):
+        return value.value
+    enum_value = getattr(value, "value", None)
+    if isinstance(enum_value, str):
+        text = enum_value.strip()
+        return text or None
+    text = str(value).strip()
+    return text or None

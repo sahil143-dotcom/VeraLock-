@@ -88,8 +88,7 @@ intelligence/context.py           # last 6 turns, active commitments, speaker ro
 intelligence/reasoner.py          # one-shot structured A→G; StubLLM fixture mode
 intelligence/guardrails.py        # ack, intention, intervened, clarification cap
 intelligence/clarification.py     # max one question per topic_id
-intelligence/pipeline.py          # wires the pieces; speech_action SILENT | CLARIFY
-intelligence/persist.py           # maps TurnInput/TurnResult onto PersistHandoff
+intelligence/pipeline.py          # wires the pieces; emits PersistHandoff via shared.build_handoff
 intelligence/api.py               # POST /v1/turn (FastAPI-compatible)
 state/commitment_machine.py       # legal status transitions; illegal hops raise
 ```
@@ -122,29 +121,30 @@ and `intervention_reason`.
 
 ### Persist handoff
 
-After every turn, including filter skips, `BrainPipeline` builds a
-`PersistHandoff` and calls `PersistPort.persist`. The payload types
-(`PersistHandoff`, `Transition`, `PersistPort`, `NullPersistPort`) live in
-`shared/persist_handoff.py`. Brain imports that module and does not write
-`storage/`. The default port is `NullPersistPort`. `POST /v1/turn` still
-returns only the `TurnResult` dict; the handoff is a side effect.
+After every turn, including filter skips, `BrainPipeline` calls
+`build_handoff` from `shared/persist_handoff.py` and then `PersistPort.persist`.
+Brain imports `PersistHandoff`, `PersistPort`, `NullPersistPort`, and
+`build_handoff` from that module. It does not write `storage/`. The default
+port is `NullPersistPort`. `POST /v1/turn` still returns only the `TurnResult`
+dict; the handoff is a side effect.
 
-`intelligence/persist.py` `build_handoff(turn_input, turn_result, ...)` enforces
-the freeze rules: `session_id` is required; a non-null commitment has a
-non-empty `source_turn_ids` that includes `turn_id`; when a commitment is
-present, `transition.to_status` equals `commitment.status`. `from_status` is
-the status before apply on an update, and null on create. Filter skips send
-`commitment=null` and `to_status=NO_COMMITMENT`. `intervention_reason` is
-optional.
+`session_id` is required. A non-null commitment has a non-empty
+`source_turn_ids` that includes `turn_id`, and `transition.to_status` equals
+`commitment.status`. `from_status` is the status before apply on an update, and
+null on create. Filter skips send `commitment=null` and
+`to_status=NO_COMMITMENT`. `intervention_reason` is optional.
 
 ```python
 from intelligence.api import create_app, get_pipeline
-from intelligence.persist import RecordingPersistSink
 from intelligence.pipeline import BrainPipeline
+from shared.persist_handoff import PersistPort
 
-sink = RecordingPersistSink()  # Vault supplies SqlitePersistSink at process start
-pipeline = BrainPipeline(persist=sink)
-app = create_app(persist=sink)
-get_pipeline(persist=sink)
+class VaultSink(PersistPort):
+    def persist(self, handoff) -> None:
+        ...  # SqlitePersistSink in storage/
+
+pipeline = BrainPipeline(persist=VaultSink())  # default is NullPersistPort
+app = create_app(persist=VaultSink())
+get_pipeline(persist=VaultSink())
 ```
 
