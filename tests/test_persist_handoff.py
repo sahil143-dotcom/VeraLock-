@@ -9,9 +9,10 @@ import pytest
 
 from intelligence.api import create_app, get_pipeline, handle_turn_payload
 from intelligence.models import SILENT, TurnInput, TurnResult
+from intelligence.persist import RecordingPersistSink, from_turn
 from intelligence.pipeline import BrainPipeline
 from shared.commitment_schema import Commitment, CommitmentStatus
-from shared.persist_handoff import NullPersistPort, PersistHandoff, PersistPort, build_handoff
+from shared.persist_handoff import NullPersistPort, PersistHandoff, PersistPort, Transition, build_handoff
 
 BRAIN_FIELDS = [
     "commitment_id",
@@ -31,16 +32,6 @@ BRAIN_FIELDS = [
     "updated_at",
     "session_id",
 ]
-
-class RecordingPersistSink(PersistPort):
-    """In-test sink. Production wiring uses Vault's PersistPort."""
-
-    def __init__(self) -> None:
-        self.handoffs: list[PersistHandoff] = []
-
-    def persist(self, handoff: PersistHandoff) -> None:
-        self.handoffs.append(handoff)
-
 
 def run(incoming: TurnInput) -> tuple[TurnResult, PersistHandoff]:
     sink = RecordingPersistSink()
@@ -109,6 +100,18 @@ def _result(commitment: Commitment | None) -> TurnResult:
     )
 
 
+def test_shared_contract_matches_vault_main():
+    import shared
+
+    assert shared.Transition is Transition
+    assert shared.PersistHandoff is PersistHandoff
+    assert shared.PersistPort is PersistPort
+    assert shared.NullPersistPort is NullPersistPort
+    assert not hasattr(shared, "StatusTransition")
+    assert "filter_reason" not in PersistHandoff.__dataclass_fields__
+    assert Transition.__dataclass_fields__["to_status"].type in {str, "str"}
+
+
 def test_default_pipeline_uses_null_persist_port():
     pipeline = BrainPipeline()
     assert isinstance(pipeline.persist, NullPersistPort)
@@ -126,8 +129,11 @@ def test_build_handoff_ack_no_commitment():
     assert list(handoff.commitment)[: len(BRAIN_FIELDS)] == BRAIN_FIELDS
     assert incoming.turn_id in handoff.commitment["source_turn_ids"]
     assert handoff.transition.from_status is None
+    assert isinstance(handoff.transition, Transition)
     assert handoff.transition.to_status == "NO_COMMITMENT"
     assert handoff.transition.to_status == handoff.commitment["status"]
+    assert isinstance(handoff.transition.to_status, str)
+    assert "filter_reason" not in handoff.to_dict()
     assert handoff.intervened_this_turn is False
     assert handoff.intervention_reason is None
     assert "ack_not_commitment" in handoff.policy_notes
@@ -214,23 +220,27 @@ def test_build_handoff_intervened_this_turn():
 
 def test_session_id_is_required():
     incoming = turn("Got it.", session_id="  ")
-    pipeline = BrainPipeline()
     with pytest.raises(ValueError, match="session_id"):
-        pipeline._emit(incoming, _result(_commitment()), previous_status=None)
+        from_turn(incoming, _result(_commitment()))
 
 
 def test_commitment_source_turn_ids_must_include_turn_id():
     incoming = turn("I will send the proposal by Friday.", turn_id="turn-9")
-    pipeline = BrainPipeline()
     with pytest.raises(ValueError, match="source_turn_ids"):
-        pipeline._emit(incoming, _result(_commitment(source_turn_ids=[])), previous_status=None)
+        from_turn(incoming, _result(_commitment(source_turn_ids=[])))
 
     with pytest.raises(ValueError, match="turn_id"):
-        pipeline._emit(
-            incoming,
-            _result(_commitment(source_turn_ids=["turn-0"])),
-            previous_status=None,
-        )
+        from_turn(incoming, _result(_commitment(source_turn_ids=["turn-0"])))
+
+
+def test_intervention_reason_only_when_this_turn_intervened():
+    incoming = turn(
+        "I will send the proposal by Friday.",
+        intervention_reason="not this turn",
+    )
+    _result_turn, handoff = run(incoming)
+    assert handoff.intervened_this_turn is False
+    assert handoff.intervention_reason is None
 
 
 def test_commitment_status_matches_transition_to_status():
