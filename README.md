@@ -17,6 +17,8 @@ storage/db.py                 # connect + init_schema
 storage/models.py             # row models
 storage/repositories/         # ConversationRepo, TurnRepo, CommitmentRepo, InterventionRepo
 evidence/provenance.py        # get_commitment_evidence(commitment_id)
+evidence/api.py               # GET /v1/evidence/{id} (FastAPI for Glass)
+scripts/smoke_evidence_api.py
 followup/scheduler.py         # due follow-ups vs (warped) now
 followup/messages.py          # template messages (no LLM)
 followup/time_warp.py         # FAST-FORWARD 48h override of now
@@ -61,6 +63,28 @@ python scripts/smoke_vault.py
 
 Expects exit 0, prints the evidence chain, and shows a follow-up becoming due after
 FAST-FORWARD 48 hours.
+
+### Evidence HTTP (for Glass)
+
+Thin FastAPI surface over `get_commitment_evidence` so Glass can fetch
+commitment provenance without importing Vault Python in-process.
+
+```bash
+pip install fastapi uvicorn httpx
+# with an existing SQLite path:
+export VERALOCK_VAULT_DB=/path/to/vault.db
+uvicorn evidence.api:app --port 8001
+# or factory with explicit path:
+uvicorn evidence.api:create_evidence_app --factory --port 8001
+```
+
+- `GET /v1/health` → `{"status":"ok","component":"vault-evidence"}`
+- `GET /v1/evidence/{commitment_id}` → JSON with `commitment`, `events`,
+  `intervention_events`, `source_turns` (plain dicts). 404 if missing.
+
+```bash
+python scripts/smoke_evidence_api.py
+```
 
 ### Not owned by Vault
 
