@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -87,14 +89,22 @@ def test_brain_imports_shared_types_not_copies():
     assert pipeline.CommitmentStatus is schema.CommitmentStatus
     assert machine.Commitment is schema.Commitment
     assert guardrails.CommitmentStatus is schema.CommitmentStatus
-    roots = {name.split(".", 1)[0] for name in sys.modules}
-    assert "storage" not in roots
-    assert "evidence" not in roots
-    assert "followup" not in roots
-    assert "voice" not in roots
-    assert "frontend" not in roots
-    assert "evaluation" not in roots
-
+    # Brain + shared contract must not import Vault/UI packages.
+    # AST check on sources (not global sys.modules) so Vault unit tests can
+    # load storage without poisoning this assertion.
+    forbidden = {"storage", "evidence", "followup", "voice", "frontend", "evaluation"}
+    root = Path(__file__).resolve().parents[1]
+    for pkg in ("intelligence", "state", "shared"):
+        for py in (root / pkg).rglob("*.py"):
+            tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        top = alias.name.split(".", 1)[0]
+                        assert top not in forbidden, f"{py.relative_to(root)} imports {alias.name}"
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    top = node.module.split(".", 1)[0]
+                    assert top not in forbidden, f"{py.relative_to(root)} imports {node.module}"
 
 @pytest.mark.parametrize("text", ["ok", "Got it.", "sounds good", "thanks", "OK!"])
 def test_ack_is_no_commitment_and_silent(text: str):

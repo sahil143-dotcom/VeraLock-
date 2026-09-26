@@ -172,6 +172,80 @@ class CommitmentRepo:
         assert row is not None
         return row
 
+    def update_fields(
+        self,
+        commitment_id: str,
+        *,
+        updated_at: str,
+        topic_id: Optional[str] = None,
+        speaker_role: Optional[str] = None,
+        canonical_text: Optional[str] = None,
+        raw_span: Optional[str] = None,
+        source_turn_ids: Optional[list[str]] = None,
+        clarification_count: Optional[int] = None,
+        intervened: Optional[bool] = None,
+        is_acknowledgement: Optional[bool] = None,
+        is_intention_only: Optional[bool] = None,
+        confidence: Optional[float] = None,
+        conditions: Optional[dict[str, Any]] = None,
+        session_id: Optional[str] = None,
+        conversation_id: Optional[str] = None,
+        condition: Optional[str] = None,
+        dependency_owner: Optional[str] = None,
+        condition_status: Optional[str] = None,
+        due_at: Optional[str] = None,
+        next_followup_at: Optional[str] = None,
+        superseded_by_commitment_id: Optional[str] = None,
+    ) -> CommitmentRow:
+        """Update metadata fields without appending a status-transition event.
+
+        Omitted (None) kwargs are left unchanged. Does not touch status —
+        callers that need a transition should call update_status afterwards.
+        """
+        if self.get(commitment_id) is None:
+            raise KeyError(f"commitment not found: {commitment_id}")
+
+        sets = ["updated_at = ?"]
+        params: list[Any] = [updated_at]
+
+        def _set(col: str, value: Any, *, transform=None) -> None:
+            if value is None:
+                return
+            sets.append(f"{col} = ?")
+            params.append(transform(value) if transform else value)
+
+        _set("topic_id", topic_id)
+        _set("speaker_role", speaker_role)
+        _set("canonical_text", canonical_text)
+        _set("raw_span", raw_span)
+        _set("source_turn_ids", source_turn_ids, transform=lambda v: json.dumps(list(v)))
+        _set("clarification_count", clarification_count)
+        _set("intervened", intervened, transform=lambda v: int(bool(v)))
+        _set("is_acknowledgement", is_acknowledgement, transform=lambda v: int(bool(v)))
+        _set("is_intention_only", is_intention_only, transform=lambda v: int(bool(v)))
+        _set("confidence", confidence)
+        if conditions is not None:
+            sets.append("conditions = ?")
+            params.append(json.dumps(conditions))
+        _set("session_id", session_id)
+        _set("conversation_id", conversation_id)
+        _set("condition", condition)
+        _set("dependency_owner", dependency_owner)
+        _set("condition_status", condition_status)
+        _set("due_at", due_at)
+        _set("next_followup_at", next_followup_at)
+        _set("superseded_by_commitment_id", superseded_by_commitment_id)
+
+        params.append(commitment_id)
+        self._conn.execute(
+            f"UPDATE commitments SET {', '.join(sets)} WHERE commitment_id = ?",
+            tuple(params),
+        )
+        self._conn.commit()
+        row = self.get(commitment_id)
+        assert row is not None
+        return row
+
     def set_followup(
         self,
         commitment_id: str,

@@ -1,4 +1,4 @@
-"""Vault persistence: SQLite schema, models, and repositories."""
+"""Vault persistence: SQLite schema, models, repositories, and persist sink."""
 
 from storage.db import connect, init_schema
 
