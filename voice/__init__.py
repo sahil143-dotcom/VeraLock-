@@ -1,31 +1,33 @@
-"""VeraLock Voice: capture stubs, ASR adapters, and text turn emission.
+"""VeraLock Voice: audio to a text ``POST /v1/turn`` body.
 
-Voice never sends audio to Brain. It builds the JSON body for ``POST /v1/turn``.
-Brain does not import this package and stays runnable without it.
+Brain does not import this package. Voice does not import Brain. Audio never
+enters the turn payload.
 """
 
-from voice.asr import AsrAdapter, StubAsrAdapter, Transcript
 from voice.capture import AudioChunk, Capture, FakeCapture, MicCapture, StreamCapture
 from voice.pipeline import VoicePipeline
-from voice.turn_emit import (
-    build_turn_payload,
-    new_session_id,
-    new_turn_id,
-    validate_turn_payload,
+from voice.turn_audio import (
+    OpenAIWhisperAdapter,
+    StubASR,
+    TurnAudioAdapter,
+    turn_audio_adapter_from_env,
 )
+from voice.turn_builder import build_turn, new_session_id, new_turn_id, now_iso, validate_turn_payload
 
 __all__ = [
-    "AsrAdapter",
     "AudioChunk",
     "Capture",
     "FakeCapture",
     "MicCapture",
+    "OpenAIWhisperAdapter",
     "StreamCapture",
-    "StubAsrAdapter",
-    "Transcript",
+    "StubASR",
+    "TurnAudioAdapter",
     "VoicePipeline",
-    "build_turn_payload",
+    "build_turn",
     "new_session_id",
     "new_turn_id",
+    "now_iso",
+    "turn_audio_adapter_from_env",
     "validate_turn_payload",
 ]
