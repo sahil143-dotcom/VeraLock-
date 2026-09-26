@@ -1,6 +1,6 @@
 # VeraLock
 
-Hackathon monorepo. Brain owns `intelligence/` and `state/`. Vault owns `storage/`, `evidence/`, and `followup/`.
+Hackathon monorepo. Brain owns `intelligence/` and `state/`. Vault owns `storage/`, `evidence/`, and `followup/`. Voice owns `voice/`.
 
 ## Vault (persistence layer)
 
@@ -147,4 +147,46 @@ pipeline = BrainPipeline(persist=sink)
 app = create_app(persist=sink)
 get_pipeline(persist=sink)
 ```
+
+## Voice (capture, ASR, turn emit)
+
+Voice turns a microphone stub, an in-memory stream, or plain text into the
+JSON body for `POST /v1/turn`. Audio stays in Voice. Brain receives text only
+and does not import `voice/`. Voice does not import Brain models; it emits
+dicts with Brain's turn field names.
+
+The default demo is text-first: no microphone, no ASR model, no API key, no
+network. `FakeCapture` and `StubAsrAdapter` cover the capture → transcript
+path in CI.
+
+### Layout
+
+```
+voice/capture.py        # MicCapture, StreamCapture, FakeCapture
+voice/asr.py            # AsrAdapter + StubAsrAdapter (canned transcript)
+voice/turn_emit.py      # build_turn_payload; session_id / turn_id helpers
+voice/pipeline.py       # VoicePipeline.emit_text; optional capture → ASR
+scripts/smoke_voice.py  # offline smoke test
+```
+
+### Turn body
+
+Required: `session_id`, `turn_id`, `speaker_role`, `text`.
+Optional: `created_at`, `intervened`, `active_commitments`, and, when set,
+`conversation_id` and `intervention_reason`.
+`speaker_role` is a free string (`"user"` in the smoke script).
+`new_session_id()` is reused across turns; `new_turn_id()` is unique per turn.
+`active_commitments` entries are passed through as dicts. Voice does not rename
+Brain commitment fields.
+
+### Smoke test
+
+```bash
+python scripts/smoke_voice.py
+```
+
+Expects exit 0. Prints a sample turn payload from the text-first path and from
+`FakeCapture` + `StubAsrAdapter`. If `intelligence.api.handle_turn_payload`
+imports cleanly, the script also posts the text turn and prints the Brain result.
+
 
