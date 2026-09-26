@@ -5,9 +5,9 @@ The harness builds `BrainPipeline(fixture_mode=True)`, so the reasoner is
 `StubLLM`: deterministic, offline, no API key. It does not invent a second
 model stub.
 
-This package scores `TurnResult` (status, speech, flags). It does not write
-Vault tables. A later Brain+Vault `PersistHandoff` end-to-end suite can reuse
-the same scenarios through the hooks below.
+Golden tests score `TurnResult` (status, speech, flags) and do not write
+Vault tables. `evaluation/test_persist_handoff.py` is the Brain→Vault
+`PersistHandoff` suite. It reuses these scenarios through the hooks below.
 
 ## Run
 
@@ -29,6 +29,24 @@ Print a pass/fail table (scenario, turn, expected vs actual speech and status) a
 python scripts/run_eval.py
 python -m evaluation
 ```
+
+Brain→Vault handoff (fixture Brain, in-memory SQLite, same sink the demo uses):
+
+```bash
+pytest evaluation/test_persist_handoff.py
+python scripts/smoke_brain_vault.py
+```
+
+`test_persist_handoff.py` builds `BrainPipeline(fixture_mode=True, persist=SqlitePersistSink(conn))` and, after each turn, checks `evidence.provenance.get_commitment_evidence`. Cases:
+
+| Case | Expectation |
+| --- | --- |
+| Clear commitment | `CONFIRMED` and `SILENT`. Evidence `source_turn_ids` includes the turn. DB status matches `TurnResult`. |
+| Clarify | `AWAITING_CLARIFICATION` with an evidence chain. A later clear reply on that row confirms it. |
+| Filter skip (`um`, also empty and duplicate) | `skipped_by_filter`, commitment null, turn row still stored. |
+| Intervened clear commitment | `DETECTED`, not `CONFIRMED`. Evidence `intervened` and an intervention event cite the turn. |
+
+When `frontend/demo_server.py` is on the branch, the same file also posts one fixture turn to `create_demo_app` (`create_app(persist=SqlitePersistSink)`) and checks that `POST /v1/turn` is still TurnResult-shaped JSON.
 
 ## Scenario format
 
@@ -113,9 +131,9 @@ assert `TurnResult` only.
 - `pipeline_factory(scenario) -> BrainPipeline` — build the pipeline yourself when a sink must observe the turn. Fixture mode stays on.
 - `observers` — objects with `after_turn(scenario, turn, pipeline, result) -> list[str]`. Each string is a failure.
 
-A later end-to-end test can pass a factory that sets `persist` to
-`intelligence.persist.RecordingPersistSink` or Vault's `SqlitePersistSink`,
-then an observer that checks the handoff (`speech_action`,
-`transition.to_status`, `source_turn_ids`). Those checks stay out of the
-golden YAML. Brain packages must not import `evaluation` (see the AST guard
-in `tests/test_policy.py`).
+`evaluation/persist_observer.py` is that end-to-end test. Its factory sets
+`persist` to Vault's `SqlitePersistSink`. Its observer checks the stored
+chain (DB status, `source_turn_ids`, intervention events) through
+`get_commitment_evidence`. Golden scoring still checks `speech_action`.
+Those checks stay out of the golden YAML. Brain packages must not import
+`evaluation` (see the AST guard in `tests/test_policy.py`).
