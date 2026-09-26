@@ -1,3 +1,8 @@
 # Veralock Vault persistence layer prefers Python 3.11+ stdlib only (sqlite3).
 # No third-party runtime dependencies required for storage/, evidence/, followup/.
-# FastAPI / uvicorn may be added by the API layer later; not required here.
+
+# Brain tests and the optional FastAPI text-turn entrypoint (intelligence/api.py).
+pytest>=8.0
+fastapi>=0.115
+httpx>=0.27
+uvicorn>=0.32

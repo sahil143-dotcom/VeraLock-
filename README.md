@@ -1,6 +1,6 @@
 # VeraLock
 
-Hackathon monorepo. Vault owns `storage/`, `evidence/`, and `followup/`.
+Hackathon monorepo. Brain owns `intelligence/` and `state/`. Vault owns `storage/`, `evidence/`, and `followup/`.
 
 ## Vault (persistence layer)
 
@@ -54,3 +54,56 @@ FAST-FORWARD 48 hours.
 ### Not owned by Vault
 
 Do **not** implement under Vault: `intelligence/`, `state/`, `voice/`, `frontend/`.
+
+## Brain (intelligence + state)
+
+Brain decides what a text turn means and whether VeraLock should speak.
+It imports `Commitment` and `CommitmentStatus` from `shared/commitment_schema.py`
+and does not rename those fields. It does not write Vault tables and it does
+not depend on voice.
+
+Clear commitment → `CONFIRMED` and speech `SILENT`.
+An acknowledgement is not a commitment. An intention is not a commitment.
+`intervened=true` blocks automatic confirmation.
+At most one clarification question per `topic_id`. If the topic is still
+ambiguous after that question, status becomes `UNRESOLVED_AMBIGUOUS` and
+speech goes `SILENT`.
+
+### Layout
+
+```
+intelligence/turn_filter.py       # cost/latency gate only; no semantic verdict
+intelligence/context.py           # last 6 turns, active commitments, speaker roles
+intelligence/reasoner.py          # one-shot structured A→G; StubLLM fixture mode
+intelligence/guardrails.py        # ack, intention, intervened, clarification cap
+intelligence/clarification.py     # max one question per topic_id
+intelligence/pipeline.py          # wires the pieces; speech_action SILENT | CLARIFY
+intelligence/api.py               # POST /v1/turn (FastAPI-compatible)
+state/commitment_machine.py       # legal status transitions; illegal hops raise
+```
+
+A→G is a single JSON object: actor, topic bind, surface class, canonical draft,
+evidence, flags, speech hint. The stub model is deterministic and uses no API
+key. Guardrails, not the model, set the final status and speech action.
+
+### Tests
+
+```bash
+pytest
+```
+
+No API keys. Fixture mode is the default (`BrainPipeline()`).
+
+### Text turn entrypoint
+
+```bash
+pip install fastapi uvicorn
+uvicorn intelligence.api:create_app --factory --port 8000
+```
+
+`POST /v1/turn` accepts `session_id`, `turn_id`, `speaker_role`, `text`, and
+optional `intervened`, `created_at`, and `active_commitments`.
+`GET /health` returns the Brain component check.
+
+`handle_turn_payload` in `intelligence/api.py` is the same entry without HTTP.
+
