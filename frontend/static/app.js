@@ -346,11 +346,11 @@
     if (!commitmentId) return { available: false, detail: "This turn has no commitment id." };
     try {
       const response = await fetch(`/v1/evidence/${encodeURIComponent(commitmentId)}`);
-      const body = await response.json();
+      const body = await response.json().catch(() => ({}));
       if (!response.ok) {
         return { available: false, detail: "No Vault row for this commitment yet." };
       }
-      return body;
+      return Object.assign({ available: true }, body);
     } catch (_err) {
       return { available: false, detail: "Evidence lookup failed. The turn result is still shown." };
     }

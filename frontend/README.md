@@ -1,6 +1,6 @@
 # VeraLock demo UI
 
-Single-page demo that sends text turns to fixture-mode Brain (`POST /v1/turn`) and shows the `TurnResult`: speech action, clarification question, commitment fields, and session transcript. After each turn, Brain's persist handoff writes Vault rows into a local SQLite file. When a turn has a `commitment_id`, the page loads provenance from `evidence.provenance.get_commitment_evidence`.
+Single-page demo that sends text turns to fixture-mode Brain (`POST /v1/turn`) and shows the `TurnResult`: speech action, clarification question, commitment fields, and session transcript. After each turn, Brain's persist handoff writes Vault rows into a temporary SQLite file. When a turn has a `commitment_id`, the page loads provenance through `evidence.api.evidence_payload` (the same JSON as `GET /v1/evidence/{id}`).
 
 No API keys. The demo entrypoint does not modify `intelligence/`.
 
@@ -17,15 +17,11 @@ python frontend/demo_server.py
 
 Open **http://127.0.0.1:8000**.
 
-`Brain ok · fixture mode` in the header means `GET /health` succeeded. The footer prints the SQLite path (default `frontend/demo.sqlite`).
-
-Options:
+`Brain ok · fixture mode` in the header means `GET /health` succeeded. Startup prints the SQLite path. The default is a new file from `tempfile` (for example `/tmp/veralock-demo-….sqlite`). Stopping the server does not delete it; start again for an empty Vault, or pass `--db` to reuse a file.
 
 ```bash
-python frontend/demo_server.py --host 127.0.0.1 --port 8000 --db frontend/demo.sqlite
+python frontend/demo_server.py --host 127.0.0.1 --port 8000 --db /tmp/veralock-demo.sqlite
 ```
-
-Stop the server with Ctrl+C. Delete the SQLite file to reset Vault rows. That file is gitignored.
 
 ## What the page does
 
@@ -54,29 +50,26 @@ Check **Intervened** and send a clear commitment to hold it off `CONFIRMED` (`bl
 
 ## Persist wiring
 
-`frontend/demo_server.py` opens SQLite with `storage.db.connect`, runs `init_schema`, and serves the UI with:
+`frontend/demo_server.py` is the only composition point:
 
 ```python
-create_app(persist=SqlitePersistSink(conn))
+import tempfile
+
+from intelligence.api import create_app
+from storage.db import connect, init_schema
+from storage.persist_sink import SqlitePersistSink
+
+db_path = tempfile.NamedTemporaryFile(
+    prefix="veralock-demo-", suffix=".sqlite", delete=False
+).name
+conn = connect(db_path, check_same_thread=False)
+init_schema(conn)
+app = create_app(persist=SqlitePersistSink(conn))
 ```
 
-`create_app` on this branch already accepts `persist` and builds a fixture-mode pipeline. Brain emits `PersistHandoff` via `shared.persist_handoff.build_handoff` inside the pipeline, including `from_status` from the commitment state machine. The demo does not write that handoff a second time.
+`create_app` builds a fixture-mode pipeline. The default sink on Brain is `NullPersistPort`; this process replaces it with `SqlitePersistSink`. Brain emits the shared `PersistHandoff` (including `from_status`) and `POST /v1/turn` still returns only the `TurnResult` dict.
 
-`POST /v1/turn` still returns only the `TurnResult` dict.
-
-Check rows after a clear commitment (server must be stopped, or use another connection while it is up):
-
-```bash
-python - <<'PY'
-import sqlite3
-conn = sqlite3.connect("frontend/demo.sqlite")
-print("conversations", conn.execute("select count(*) from conversations").fetchone()[0])
-print("turns", conn.execute("select count(*) from turns").fetchone()[0])
-print("commitments", conn.execute("select status, canonical_text from commitments").fetchall())
-PY
-```
-
-A clear commitment produces a conversation row, a turn row, and a commitment row with status `CONFIRMED`.
+After a clear commitment, `GET /v1/demo/status` shows `db_path`. That file has a conversation row, a turn row, and a commitment row with status `CONFIRMED`.
 
 ## Demo routes
 
@@ -85,7 +78,7 @@ A clear commitment produces a conversation row, a turn row, and a commitment row
 | `GET` | `/` | Demo page |
 | `GET` | `/health` | Brain health (`{"status":"ok","component":"brain"}`) |
 | `POST` | `/v1/turn` | Brain turn (`TurnResult` JSON) |
-| `GET` | `/v1/evidence/{commitment_id}` | Vault provenance, or `available: false` when the row is missing |
+| `GET` | `/v1/evidence/{commitment_id}` | Vault provenance (`evidence.api.evidence_payload`). 404 if the row is missing |
 | `GET` | `/v1/sessions/{session_id}` | Stored turns and commitments for the session |
 | `GET` | `/v1/demo/status` | Fixture flag and SQLite path |
 
