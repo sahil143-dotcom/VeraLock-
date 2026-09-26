@@ -4,34 +4,28 @@
 
   const SAMPLES = [
     {
-      label: "Clear commitment",
-      expect: "CONFIRMED · SILENT",
       text: "I will send the proposal by Friday.",
+      aside: "a clear promise",
     },
     {
-      label: "Acknowledgement",
-      expect: "NO_COMMITMENT · acknowledgement",
       text: "Sounds good.",
+      aside: "only an acknowledgement",
     },
     {
-      label: "Ambiguous",
-      expect: "CLARIFY · AWAITING_CLARIFICATION",
       text: "I'll handle the budget review soon.",
+      aside: "not yet specific",
     },
     {
-      label: "Ambiguous follow-up",
-      expect: "UNRESOLVED_AMBIGUOUS after the ambiguous chip",
       text: "Maybe the budget review sometime, I'm not sure.",
+      aside: "still unclear, same sitting",
     },
     {
-      label: "Intention only",
-      expect: "NO_COMMITMENT · intention",
       text: "I might send the proposal by Friday.",
+      aside: "an intention, not a promise",
     },
     {
-      label: "Filter skip",
-      expect: "skipped_by_filter · filler",
       text: "um",
+      aside: "nothing to weigh",
     },
   ];
 
@@ -121,70 +115,86 @@
     els.error.textContent = message;
   }
 
-  function badge(className, text) {
-    const node = document.createElement("span");
-    node.className = className;
-    node.textContent = text;
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
     return node;
-  }
-
-  function fact(term, value) {
-    const wrap = document.createElement("div");
-    const dt = document.createElement("dt");
-    const dd = document.createElement("dd");
-    dt.textContent = term;
-    dd.textContent = value;
-    if (term === "commitment id" || term === "topic") dd.className = "mono";
-    wrap.append(dt, dd);
-    return wrap;
   }
 
   function yesNo(value) {
     return value ? "yes" : "no";
   }
 
-  function renderCommitment(commitment) {
-    const block = document.createElement("div");
-    const status = badge(`status ${commitment.status || ""}`, commitment.status || "NO STATUS");
-    const quote = document.createElement("blockquote");
-    quote.className = "canonical";
-    quote.textContent = commitment.canonical_text || "(empty canonical text)";
-    const facts = document.createElement("dl");
-    facts.className = "facts";
-    facts.append(
-      fact("topic", commitment.topic_id || "—"),
-      fact("acknowledgement", yesNo(commitment.is_acknowledgement)),
-      fact("intention only", yesNo(commitment.is_intention_only)),
-      fact("commitment id", commitment.commitment_id || "—"),
+  function annotation(commitment) {
+    const parts = [
+      `topic ${commitment.topic_id || "—"}`,
+      `acknowledgement ${yesNo(commitment.is_acknowledgement)}`,
+      `intention only ${yesNo(commitment.is_intention_only)}`,
+    ];
+    return parts.join("  ·  ");
+  }
+
+  function renderLedger(commitment) {
+    const block = el("div", "ledger");
+    block.append(
+      el("p", "ledger-status", commitment.status || "—"),
+      el("p", "canonical", commitment.canonical_text || ""),
+      el("p", "annotation", annotation(commitment)),
     );
-    block.append(status, quote, facts);
+    const idLine = el("p", "annotation mono", commitment.commitment_id || "");
+    block.append(idLine);
     return block;
+  }
+
+  function renderSpeech(result) {
+    if (result.speech_action === "CLARIFY" && result.clarification_question) {
+      const lean = el("div", "lean-in");
+      const kicker = el("p", "ask", "VeraLock leans in");
+      const question = el("p", "question", result.clarification_question);
+      lean.append(kicker, question);
+      lean.setAttribute("aria-label", "Speech action CLARIFY");
+      return lean;
+    }
+    const breath = el("p", "breath");
+    breath.setAttribute("aria-label", `Speech action ${result.speech_action || "SILENT"}`);
+    if (result.skipped_by_filter) {
+      breath.textContent = `set aside · ${result.filter_reason || "skip"}`;
+    } else if (result.speech_action === "SILENT") {
+      breath.textContent = "silent";
+    } else {
+      breath.textContent = (result.speech_action || "silent").toLowerCase();
+    }
+    return breath;
   }
 
   function renderDebug(entry) {
     const details = document.createElement("details");
-    const skipped = Boolean(entry.result && entry.result.skipped_by_filter);
-    if (skipped) details.open = true;
-    const summary = document.createElement("summary");
-    summary.textContent = "Debug · filter skip and policy notes";
     const result = entry.result || {};
-    const line = document.createElement("p");
+    if (result.skipped_by_filter) details.open = true;
+    const summary = el("summary", null, "Filter and policy notes");
     const notes = (result.policy_notes || []).join(", ") || "none";
-    line.textContent = result.skipped_by_filter
-      ? `Filter skipped this turn (${result.filter_reason || "skip"}). Policy notes: ${notes}.`
-      : `Filter: ${result.filter_reason || "pass"}. Policy notes: ${notes}.`;
-    const pre = document.createElement("pre");
-    pre.textContent = JSON.stringify(
-      {
-        skipped_by_filter: Boolean(result.skipped_by_filter),
-        filter_reason: result.filter_reason || null,
-        policy_notes: result.policy_notes || [],
-        speech_action: result.speech_action || null,
-        clarification_question: result.clarification_question || null,
-        evidence_chain: entry.evidence && entry.evidence.chain ? entry.evidence.chain : null,
-      },
+    const line = el(
+      "p",
+      "annotation",
+      result.skipped_by_filter
+        ? `Filter skipped this turn (${result.filter_reason || "skip"}). Policy notes: ${notes}.`
+        : `Filter: ${result.filter_reason || "pass"}. Policy notes: ${notes}.`,
+    );
+    const pre = el(
+      "pre",
       null,
-      2,
+      JSON.stringify(
+        {
+          speech_action: result.speech_action || null,
+          clarification_question: result.clarification_question || null,
+          skipped_by_filter: Boolean(result.skipped_by_filter),
+          filter_reason: result.filter_reason || null,
+          policy_notes: result.policy_notes || [],
+        },
+        null,
+        2,
+      ),
     );
     details.append(summary, line, pre);
     return details;
@@ -193,63 +203,43 @@
   function renderHero() {
     const entry = state.history[state.history.length - 1];
     els.hero.replaceChildren();
-    els.hero.classList.toggle("empty", !entry);
+    els.hero.classList.toggle("quiet-note", !entry);
     if (!entry) {
-      els.hero.textContent = "Send a turn to see speech action, the clarification question, and commitment status.";
+      els.hero.textContent = "Nothing has been said. VeraLock is still.";
       return;
     }
+    const sheet = el("div", "settle");
     const result = entry.result;
-    const row = document.createElement("div");
-    row.className = "hero-speech";
-    row.append(badge(`speech ${result.speech_action}`, result.speech_action));
-    if (result.skipped_by_filter) {
-      row.append(badge("speech SKIP", `FILTER ${result.filter_reason || "SKIP"}`));
-    }
-    const said = document.createElement("p");
-    if (result.speech_action === "CLARIFY" && result.clarification_question) {
-      said.className = "question";
-      said.textContent = result.clarification_question;
-    } else if (result.speech_action === "SILENT") {
-      said.textContent = "VeraLock stays silent.";
+    sheet.append(renderSpeech(result));
+    if (result.commitment) {
+      sheet.append(renderLedger(result.commitment));
     } else {
-      said.textContent = "No clarification question.";
+      sheet.append(el("p", "quiet-note", "Nothing was kept from this turn."));
     }
-    els.hero.append(row, said);
-    if (result.commitment) els.hero.append(renderCommitment(result.commitment));
-    else {
-      const none = document.createElement("p");
-      none.className = "empty";
-      none.textContent = "No commitment on this turn.";
-      els.hero.append(none);
-    }
-    els.hero.append(renderDebug(entry));
+    sheet.append(renderDebug(entry));
+    els.hero.append(sheet);
   }
 
   function renderTranscript() {
     els.transcript.replaceChildren();
     state.history.forEach((entry) => {
-      const item = document.createElement("li");
-      item.className = "turn";
-      const meta = document.createElement("p");
-      meta.className = "meta";
-      meta.textContent = `${entry.speaker_role} · ${entry.turn_id}`;
-      const text = document.createElement("p");
-      text.textContent = entry.text;
-      const row = document.createElement("div");
-      row.className = "hero-speech";
+      const item = el("li", "turn");
       const result = entry.result;
-      row.append(badge(`speech ${result.speech_action}`, result.speech_action));
-      if (result.commitment && result.commitment.status) {
-        row.append(badge(`status ${result.commitment.status}`, result.commitment.status));
-      } else if (result.skipped_by_filter) {
-        row.append(badge("speech SKIP", "FILTER SKIP"));
+      item.append(
+        el("p", "who", entry.speaker_role),
+        el("p", "line", entry.text),
+      );
+      const after = el("p", "after");
+      if (result.skipped_by_filter) {
+        after.textContent = `silent · set aside (${result.filter_reason || "skip"})`;
+      } else if (result.commitment && result.commitment.status) {
+        after.textContent = `${(result.speech_action || "").toLowerCase()} · ${result.commitment.status}`;
+      } else {
+        after.textContent = (result.speech_action || "").toLowerCase();
       }
-      item.append(meta, text, row);
+      item.append(after);
       if (result.clarification_question) {
-        const q = document.createElement("p");
-        q.className = "question";
-        q.textContent = result.clarification_question;
-        item.append(q);
+        item.append(el("p", "echo", result.clarification_question));
       }
       els.transcript.append(item);
     });
@@ -257,61 +247,40 @@
 
   function renderEvidence(evidence) {
     els.evidence.replaceChildren();
+    els.evidence.className = "evidence";
     if (!evidence) {
-      els.evidence.className = "evidence empty";
-      els.evidence.textContent = "A commitment id from the last turn will load provenance here.";
+      els.evidence.classList.add("quiet-note");
+      els.evidence.textContent = "A kept promise will show its trail here.";
       return;
     }
     if (evidence.pending) {
-      els.evidence.className = "evidence empty";
-      els.evidence.textContent = "Loading Vault provenance…";
+      els.evidence.classList.add("quiet-note");
+      els.evidence.textContent = "Looking for what was kept…";
       return;
     }
     if (!evidence.available) {
-      els.evidence.className = "evidence empty";
+      els.evidence.classList.add("quiet-note");
       els.evidence.textContent = evidence.detail || "No Vault row for this commitment yet.";
       return;
     }
-    els.evidence.className = "evidence";
     const commitment = evidence.commitment || {};
-    const heading = document.createElement("p");
-    heading.append(badge(`status ${commitment.status || ""}`, commitment.status || "STORED"));
-    const quote = document.createElement("blockquote");
-    quote.className = "canonical";
-    quote.textContent = commitment.canonical_text || "";
-    els.evidence.append(heading, quote);
-
+    const sheet = el("div", "settle");
+    sheet.append(
+      el("p", "ledger-status", commitment.status || ""),
+      el("p", "kept-line", commitment.canonical_text || ""),
+    );
     const events = evidence.events || [];
     if (events.length) {
-      const label = document.createElement("p");
-      label.className = "section-label";
-      label.textContent = "Status events";
-      els.evidence.append(label);
       events.forEach((event) => {
-        const line = document.createElement("p");
-        line.className = "event";
         const from = event.from_status || "—";
-        const strong = document.createElement("strong");
-        strong.textContent = `${from} → ${event.to_status}`;
-        line.append(strong);
-        if (event.note) line.append(document.createTextNode(` · ${event.note}`));
-        els.evidence.append(line);
+        const note = event.note ? ` · ${event.note}` : "";
+        sheet.append(el("p", "event", `${from} → ${event.to_status}${note}`));
       });
     }
-
-    const turns = evidence.source_turns || [];
-    if (turns.length) {
-      const label = document.createElement("p");
-      label.className = "section-label";
-      label.textContent = "Source turns";
-      els.evidence.append(label);
-      turns.forEach((turn) => {
-        const line = document.createElement("p");
-        line.className = "source-turn";
-        line.textContent = `${turn.speaker_role}: ${turn.content}`;
-        els.evidence.append(line);
-      });
-    }
+    (evidence.source_turns || []).forEach((turn) => {
+      sheet.append(el("p", "source-turn", `${turn.speaker_role}: ${turn.content}`));
+    });
+    els.evidence.append(sheet);
   }
 
   function render() {
@@ -320,25 +289,26 @@
     const last = state.history[state.history.length - 1];
     renderEvidence(last ? last.evidence : null);
     els.send.disabled = state.sending;
-    els.send.textContent = state.sending ? "Sending…" : "Send turn";
-    document.querySelectorAll(".chip").forEach((chip) => {
-      chip.disabled = state.sending;
+    els.send.textContent = state.sending ? "Sending…" : "Send";
+    document.querySelectorAll(".utterance").forEach((button) => {
+      button.disabled = state.sending;
     });
   }
 
   async function refreshVault() {
-    if (!state.sessionId) return;
+    const sessionId = state.sessionId;
+    if (!sessionId) return;
     try {
-      const response = await fetch(`/v1/sessions/${encodeURIComponent(state.sessionId)}`);
-      if (!response.ok) return;
+      const response = await fetch(`/v1/sessions/${encodeURIComponent(sessionId)}`);
+      if (!response.ok || sessionId !== state.sessionId) return;
       const body = await response.json();
       const turns = body.turn_count || 0;
       const commitments = body.commitment_count || 0;
       els.vault.textContent = body.conversation_id
-        ? `SQLite · ${turns} turn${turns === 1 ? "" : "s"} · ${commitments} commitment${commitments === 1 ? "" : "s"}`
-        : "No rows for this session yet.";
+        ? `${turns} turn${turns === 1 ? "" : "s"} kept · ${commitments} commitment${commitments === 1 ? "" : "s"}`
+        : "Nothing written down yet.";
     } catch (_err) {
-      els.vault.textContent = "Vault snapshot unavailable.";
+      if (sessionId === state.sessionId) els.vault.textContent = "The ledger could not be read.";
     }
   }
 
@@ -355,7 +325,7 @@
       }
       return Object.assign({ available: true }, body);
     } catch (_err) {
-      return { available: false, detail: "Evidence lookup failed. The turn result is still shown." };
+      return { available: false, detail: "The trail could not be read. The turn is still here." };
     }
   }
 
@@ -364,7 +334,7 @@
     const sessionId = els.session.value.trim();
     const speaker = els.speaker.value.trim();
     if (!sessionId || !speaker || !utterance) {
-      setError("Session, speaker role, and text are required.");
+      setError("Session, speaker, and the words themselves are required.");
       return;
     }
     if (sessionId !== state.sessionId) adoptSession(sessionId);
@@ -402,10 +372,9 @@
         created_at: payload.created_at,
         intervened: payload.intervened,
         result: body,
-        evidence: body.commitment && body.commitment.commitment_id ? { pending: true } : {
-          available: false,
-          detail: "This turn has no commitment id.",
-        },
+        evidence: body.commitment && body.commitment.commitment_id
+          ? { pending: true }
+          : { available: false, detail: "This turn has no commitment id." },
       };
       rememberCommitment(body.commitment);
       state.history.push(entry);
@@ -424,16 +393,12 @@
     }
   }
 
-  function renderChips() {
+  function renderUtterances() {
     SAMPLES.forEach((sample) => {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "chip";
-      const title = document.createElement("strong");
-      title.textContent = sample.label;
-      const expect = document.createElement("span");
-      expect.textContent = sample.expect;
-      button.append(title, expect);
+      button.className = "utterance";
+      button.append(el("span", "said", `“${sample.text}”`), el("span", "aside", sample.aside));
       button.addEventListener("click", () => {
         els.text.value = sample.text;
         sendTurn(sample.text);
@@ -468,23 +433,25 @@
 
   els.speaker.addEventListener("change", save);
 
-  renderChips();
+  renderUtterances();
   const stored = loadStore();
   adoptSession(stored.current || id("sess"));
 
   fetch("/health")
     .then((response) => response.json())
     .then((body) => {
-      els.health.textContent = body.status === "ok" ? "Brain ok · fixture mode" : "Brain unavailable";
+      els.health.textContent = body.status === "ok" ? "listening" : "not listening";
     })
     .catch(() => {
-      els.health.textContent = "Brain unavailable";
+      els.health.textContent = "not listening";
     });
 
   fetch("/v1/demo/status")
     .then((response) => response.json())
     .then((body) => {
-      els.foot.textContent = `Fixture mode · no API keys · ${body.db_path || "sqlite"}`;
+      els.foot.textContent = body.db_path
+        ? `Fixture mode · no API keys · ${body.db_path}`
+        : "Fixture mode · no API keys";
     })
     .catch(() => {});
 })();

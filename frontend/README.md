@@ -17,7 +17,7 @@ python frontend/demo_server.py
 
 Open **http://127.0.0.1:8000**.
 
-`Brain ok · fixture mode` in the header means `GET /health` succeeded. Startup prints the SQLite path. The default is a new file from `tempfile` (for example `/tmp/veralock-demo-….sqlite`). Stopping the server does not delete it; start again for an empty Vault, or pass `--db` to reuse a file.
+The header reads **listening** when `GET /health` succeeds. Startup prints the SQLite path. The default is a new file from `tempfile` (for example `/tmp/veralock-demo-….sqlite`). Stopping the server does not delete it; start again for an empty Vault, or pass `--db` to reuse a file.
 
 ```bash
 python frontend/demo_server.py --host 127.0.0.1 --port 8000 --db /tmp/veralock-demo.sqlite
@@ -37,16 +37,16 @@ python frontend/demo_server.py --host 127.0.0.1 --port 8000 --db /tmp/veralock-d
 
 These match the fixture reasoner (no network):
 
-| Chip | Text | Fixture result |
-| --- | --- | --- |
-| Clear commitment | `I will send the proposal by Friday.` | `CONFIRMED`, speech `SILENT` |
-| Acknowledgement | `Sounds good.` | `NO_COMMITMENT`, `is_acknowledgement` |
-| Ambiguous | `I'll handle the budget review soon.` | `CLARIFY`, `AWAITING_CLARIFICATION` |
-| Ambiguous follow-up | `Maybe the budget review sometime, I'm not sure.` | same session after the ambiguous chip → `UNRESOLVED_AMBIGUOUS`, speech `SILENT` |
-| Intention only | `I might send the proposal by Friday.` | `NO_COMMITMENT`, `is_intention_only` |
-| Filter skip | `um` | `skipped_by_filter`, reason `filler` |
+| Utterance on the page | Fixture result |
+| --- | --- |
+| `I will send the proposal by Friday.` | `CONFIRMED`, speech `SILENT` |
+| `Sounds good.` | `NO_COMMITMENT`, `is_acknowledgement` |
+| `I'll handle the budget review soon.` | `CLARIFY`, `AWAITING_CLARIFICATION` |
+| `Maybe the budget review sometime, I'm not sure.` | same sitting after the line above → `UNRESOLVED_AMBIGUOUS`, speech `SILENT` |
+| `I might send the proposal by Friday.` | `NO_COMMITMENT`, `is_intention_only` |
+| `um` | `skipped_by_filter`, reason `filler` |
 
-Check **Intervened** and send a clear commitment to hold it off `CONFIRMED` (`blocked_auto_confirm`).
+Check **Someone already stepped in** and send a clear promise to hold it off `CONFIRMED` (`blocked_auto_confirm`).
 
 ## Persist wiring
 
