@@ -37,7 +37,7 @@ pytest evaluation/test_persist_handoff.py
 python scripts/smoke_brain_vault.py
 ```
 
-`test_persist_handoff.py` builds `BrainPipeline(fixture_mode=True, persist=SqlitePersistSink(conn))` and, after each turn, checks `evidence.provenance.get_commitment_evidence`. Cases:
+`test_persist_handoff.py` follows `scripts/smoke_brain_vault.py`: one `connect()` per scenario, `init_schema`, `SqlitePersistSink(conn)`, `BrainPipeline(persist=sink)`, then `get_commitment_evidence(id, same conn)`. It does not open a second connection for the evidence assert. A second `:memory:` database is empty even after persist succeeds. Cases:
 
 | Case | Expectation |
 | --- | --- |
@@ -131,9 +131,10 @@ assert `TurnResult` only.
 - `pipeline_factory(scenario) -> BrainPipeline` — build the pipeline yourself when a sink must observe the turn. Fixture mode stays on.
 - `observers` — objects with `after_turn(scenario, turn, pipeline, result) -> list[str]`. Each string is a failure.
 
-`evaluation/persist_observer.py` is that end-to-end test. Its factory sets
-`persist` to Vault's `SqlitePersistSink`. Its observer checks the stored
-chain (DB status, `source_turn_ids`, intervention events) through
-`get_commitment_evidence`. Golden scoring still checks `speech_action`.
-Those checks stay out of the golden YAML. Brain packages must not import
-`evaluation` (see the AST guard in `tests/test_policy.py`).
+`evaluation/persist_observer.py` is that end-to-end test. Its factory does
+one `connect()`, then `init_schema`, `SqlitePersistSink(conn)`, and
+`BrainPipeline(persist=sink)`. The observer calls `get_commitment_evidence`
+with that sink connection (DB status, `source_turn_ids`, intervention
+events). It does not call `connect()` again. Golden scoring still checks
+`speech_action`. Those checks stay out of the golden YAML. Brain packages
+must not import `evaluation` (see the AST guard in `tests/test_policy.py`).

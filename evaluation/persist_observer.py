@@ -1,11 +1,16 @@
 """Brain → Vault observer for golden dialogs.
 
-Builds ``BrainPipeline(fixture_mode=True, persist=SqlitePersistSink(conn))``
-and, after each turn, checks the SQLite row against ``TurnResult`` via
-``evidence.provenance.get_commitment_evidence``.
+Mirrors ``scripts/smoke_brain_vault.py``: one ``connect()`` per scenario,
+``init_schema``, ``SqlitePersistSink(conn)``, ``BrainPipeline(persist=sink)``,
+then ``get_commitment_evidence(id, same conn)``.
 
-One connection per scenario. Turn ids repeat across files (``turn-1``), so
-scenarios must not share a database.
+A second ``connect(":memory:")`` is a different database. Evidence read from
+it is empty even when the sink already persisted the turn. This observer
+never opens that second connection. It reads ``SqlitePersistSink``'s
+connection, the same object handed to the pipeline.
+
+Turn ids repeat across files (``turn-1``), so each scenario gets its own
+connection.
 """
 
 from __future__ import annotations
@@ -51,18 +56,39 @@ class TurnObservation:
     event_count: int
 
 
+def sink_connection(pipeline: BrainPipeline) -> sqlite3.Connection:
+    """The connection ``SqlitePersistSink`` writes. Evidence must use this object."""
+    sink = pipeline.persist
+    if not isinstance(sink, SqlitePersistSink):
+        raise TypeError(
+            f"PersistHandoff evidence requires SqlitePersistSink, got {type(sink).__name__}"
+        )
+    return sink._conn
+
+
 @dataclass
 class PersistHandoffSession:
-    """Factory + observer pair. ``after_turn`` returns harness failure strings."""
+    """Factory + observer pair. ``after_turn`` returns harness failure strings.
+
+    ``connections`` records the single connection created for each scenario.
+    Evidence asserts use ``sink_connection(pipeline)``, which is that object.
+    """
 
     connections: dict[str, sqlite3.Connection] = field(default_factory=dict)
     observations: list[TurnObservation] = field(default_factory=list)
+    evidence_connections: list[tuple[str, str, sqlite3.Connection]] = field(
+        default_factory=list
+    )
 
     def factory(self, scenario: Scenario) -> BrainPipeline:
+        # Only connect() for this scenario. Do not open another for evidence.
         conn = connect(":memory:")
         init_schema(conn)
+        sink = SqlitePersistSink(conn)
+        if sink._conn is not conn:
+            raise RuntimeError("SqlitePersistSink did not keep the handed connection")
         self.connections[scenario.id] = conn
-        return BrainPipeline(fixture_mode=True, persist=SqlitePersistSink(conn))
+        return BrainPipeline(fixture_mode=True, persist=sink)
 
     def connection_for(self, scenario_id: str) -> sqlite3.Connection:
         return self.connections[scenario_id]
@@ -80,9 +106,14 @@ class PersistHandoffSession:
         pipeline: BrainPipeline,
         result: TurnResult,
     ) -> list[str]:
-        del pipeline
-        conn = self.connections[scenario.id]
+        conn = sink_connection(pipeline)
         prefix = f"{scenario.id} {turn.turn_id}"
+        owned = self.connections.get(scenario.id)
+        if owned is None or conn is not owned:
+            return [
+                f"{prefix}: evidence connection is not the SqlitePersistSink "
+                "connection created for this scenario"
+            ]
         failures: list[str] = []
         commitment = result.commitment
         status = _status_name(commitment.status) if commitment is not None else None
@@ -130,6 +161,7 @@ class PersistHandoffSession:
                     f"{prefix}: TurnResult source_turn_ids {result_ids} "
                     "does not include this turn"
                 )
+            self.evidence_connections.append((scenario.id, turn.turn_id, conn))
             try:
                 evidence = get_commitment_evidence(commitment.commitment_id, conn)
             except KeyError as exc:

@@ -11,8 +11,11 @@ from pathlib import Path
 
 import pytest
 
+from evidence.provenance import get_commitment_evidence
+from storage.db import connect, init_schema
+
 from evaluation.harness import ScenarioResult, load_scenarios, run_scenario
-from evaluation.persist_observer import PersistHandoffSession
+from evaluation.persist_observer import PersistHandoffSession, sink_connection
 
 _TURN_RESULT_KEYS = {
     "speech_action",
@@ -140,6 +143,35 @@ def test_intervened_clear_commitment_detected_not_confirmed():
     assert held.intervention_turn_ids == ["turn-1"]
 
 
+def test_evidence_reads_the_sink_connection_not_a_second_database():
+    """A new ``connect(':memory:')`` is empty. Evidence must use the sink's conn."""
+    session, result = _run("clear_commitment")
+    assert result.passed, result.render()
+
+    conn = session.connection_for("clear_commitment")
+    used = {
+        item
+        for scenario_id, _turn_id, item in session.evidence_connections
+        if scenario_id == "clear_commitment"
+    }
+    assert used == {conn}
+
+    commitment_id = session.observation("clear_commitment", "turn-1").commitment_id
+    assert commitment_id is not None
+    other = connect(":memory:")
+    try:
+        init_schema(other)
+        assert other is not conn
+        with pytest.raises(KeyError):
+            get_commitment_evidence(commitment_id, other)
+    finally:
+        other.close()
+
+    evidence = get_commitment_evidence(commitment_id, conn)
+    assert evidence["commitment"].status == "CONFIRMED"
+    assert "turn-1" in evidence["commitment"].source_turn_ids
+
+
 def test_every_golden_dialog_persists_through_the_same_sink():
     """The same factory and observer cover the whole golden catalog, one DB per file."""
     scenarios = load_scenarios()
@@ -171,6 +203,8 @@ def test_demo_post_turn_returns_turn_result_json(tmp_path: Path):
     from frontend.demo_server import create_demo_app
 
     app = create_demo_app(tmp_path / "demo.sqlite")
+    # Glass hands one connection to the sink and to get_commitment_evidence.
+    assert sink_connection(app.state.pipeline) is app.state.db_conn
     client = TestClient(app)
 
     status = client.get("/v1/demo/status")
@@ -207,6 +241,9 @@ def test_demo_post_turn_returns_turn_result_json(tmp_path: Path):
     assert chain["commitment"]["status"] == "CONFIRMED"
     assert turn_id in chain["commitment"]["source_turn_ids"]
     assert any(item["turn_id"] == turn_id for item in chain["source_turns"])
+    direct = get_commitment_evidence(commitment["commitment_id"], app.state.db_conn)
+    assert direct["commitment"].status == "CONFIRMED"
+    assert any(item.turn_id == turn_id for item in direct["source_turns"])
 
     filler = client.post(
         "/v1/turn",
