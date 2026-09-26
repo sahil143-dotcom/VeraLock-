@@ -17,7 +17,7 @@ from intelligence.clock import now_iso
 from intelligence.context import ContextWindow, Turn, as_status
 from intelligence.guardrails import decide
 from intelligence.models import SILENT, PolicyDecision, ReasonerOutput, TurnInput, TurnResult
-from intelligence.persist import build_handoff
+from intelligence.persist import from_turn
 from intelligence.reasoner import Reasoner
 from intelligence.turn_filter import gate
 from state.commitment_machine import CommitmentMachine
@@ -128,14 +128,7 @@ class BrainPipeline:
         previous_status: Optional[str],
     ) -> None:
         """Side effect only. The returned TurnResult is unchanged."""
-        handoff = build_handoff(
-            incoming,
-            result,
-            previous_status=previous_status,
-            conversation_id=incoming.conversation_id,
-            intervention_reason=incoming.intervention_reason,
-        )
-        self.persist.persist(handoff)
+        self.persist.persist(from_turn(incoming, result, previous_status=previous_status))
 
     def _enforce_cap(
         self,
