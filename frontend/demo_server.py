@@ -18,7 +18,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from evidence.api import evidence_payload
+from evidence.provenance import get_commitment_evidence
 from intelligence.api import create_app
 from storage.db import connect, init_schema
 from storage.models import CommitmentRow
@@ -74,7 +74,7 @@ def _commitments_for_session(conn: sqlite3.Connection, session_id: str) -> list[
 
 def create_demo_app(db_path: str | Path | None = None):
     """Serve the UI and fixture Brain, persisting each turn into SQLite."""
-    from fastapi import FastAPI, HTTPException
+    from fastapi import FastAPI
     from fastapi.responses import FileResponse
     from fastapi.staticfiles import StaticFiles
 
@@ -96,16 +96,25 @@ def create_demo_app(db_path: str | Path | None = None):
             "db_path": str(path),
         }
 
-    @app.get("/v1/evidence/{commitment_id}")
+    @app.get("/v1/demo/evidence/{commitment_id}")
     def evidence(commitment_id: str) -> dict[str, Any]:
-        """Same JSON as ``evidence.api``; 404 when Vault has no row yet."""
+        """Demo-only provenance. Uses the same SQLite connection as the persist sink.
+
+        Missing rows are a soft skip: the turn result still stands, and this
+        route does not define a Vault HTTP API.
+        """
         try:
-            return evidence_payload(commitment_id, conn)
-        except KeyError as exc:
-            raise HTTPException(
-                status_code=404,
-                detail=f"commitment not found: {commitment_id}",
-            ) from exc
+            payload = get_commitment_evidence(commitment_id, conn)
+        except KeyError:
+            return {
+                "available": False,
+                "commitment_id": commitment_id,
+                "detail": "No Vault row for this commitment yet.",
+            }
+        body = _jsonable(payload)
+        body["available"] = True
+        body["commitment_id"] = commitment_id
+        return body
 
     @app.get("/v1/sessions/{session_id}")
     def session_snapshot(session_id: str) -> dict[str, Any]:

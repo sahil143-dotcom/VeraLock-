@@ -1,6 +1,6 @@
 # VeraLock demo UI
 
-Single-page demo that sends text turns to fixture-mode Brain (`POST /v1/turn`) and shows the `TurnResult`: speech action, clarification question, commitment fields, and session transcript. After each turn, Brain's persist handoff writes Vault rows into a temporary SQLite file. When a turn has a `commitment_id`, the page loads provenance through `evidence.api.evidence_payload` (the same JSON as `GET /v1/evidence/{id}`).
+Single-page demo that sends text turns to fixture-mode Brain (`POST /v1/turn`) and shows the `TurnResult`: speech action, clarification question, commitment fields, and session transcript. After each turn, Brain's persist handoff writes Vault rows into a temporary SQLite file. When a turn has a `commitment_id`, a demo-only route calls `evidence.provenance.get_commitment_evidence(commitment_id, conn)` on the same SQLite connection as `SqlitePersistSink`. If that row is missing, the panel skips quietly and the turn result stays on screen.
 
 No API keys. The demo entrypoint does not modify `intelligence/`.
 
@@ -78,7 +78,7 @@ After a clear commitment, `GET /v1/demo/status` shows `db_path`. That file has a
 | `GET` | `/` | Demo page |
 | `GET` | `/health` | Brain health (`{"status":"ok","component":"brain"}`) |
 | `POST` | `/v1/turn` | Brain turn (`TurnResult` JSON) |
-| `GET` | `/v1/evidence/{commitment_id}` | Vault provenance (`evidence.api.evidence_payload`). 404 if the row is missing |
+| `GET` | `/v1/demo/evidence/{commitment_id}` | Demo-only. Calls `get_commitment_evidence` in-process. `available: false` if the row is missing |
 | `GET` | `/v1/sessions/{session_id}` | Stored turns and commitments for the session |
 | `GET` | `/v1/demo/status` | Fixture flag and SQLite path |
 

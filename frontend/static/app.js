@@ -345,10 +345,13 @@
   async function loadEvidence(commitmentId) {
     if (!commitmentId) return { available: false, detail: "This turn has no commitment id." };
     try {
-      const response = await fetch(`/v1/evidence/${encodeURIComponent(commitmentId)}`);
+      const response = await fetch(`/v1/demo/evidence/${encodeURIComponent(commitmentId)}`);
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        return { available: false, detail: "No Vault row for this commitment yet." };
+      if (!response.ok || body.available === false) {
+        return {
+          available: false,
+          detail: body.detail || "No Vault row for this commitment yet.",
+        };
       }
       return Object.assign({ available: true }, body);
     } catch (_err) {
