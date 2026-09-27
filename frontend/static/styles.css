@@ -1,0 +1,380 @@
+/* Literata and Source Sans 3, Latin subset, SIL Open Font License. */
+@font-face {
+  font-family: "Literata";
+  src: url("/static/fonts/literata-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Literata";
+  src: url("/static/fonts/literata-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Source Sans 3";
+  src: url("/static/fonts/source-sans-3-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Source Sans 3";
+  src: url("/static/fonts/source-sans-3-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --ink: #12100e;
+  --parchment: #f3ecdf;
+  --dim: #a39888;
+  --faint: rgba(243, 236, 223, 0.34);
+  --copper: #c4895a;
+  --copper-soft: #e2c2a2;
+  --hairline: rgba(243, 236, 223, 0.12);
+  --clay: #c4816a;
+  --serif: "Literata", "Liberation Serif", "Palatino Linotype", Palatino, serif;
+  --sans: "Source Sans 3", Cantarell, "Segoe UI", sans-serif;
+  --mono: "Cascadia Mono", "Liberation Mono", ui-monospace, monospace;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--ink); }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--ink);
+  color: var(--parchment);
+  font-family: var(--sans);
+  font-size: 17px;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+button, input, textarea { font: inherit; color: inherit; }
+
+.page {
+  width: min(40rem, calc(100% - 3rem));
+  margin: 0 auto;
+  padding: 4.5rem 0 5rem;
+}
+
+.mast {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1.5rem;
+  margin-bottom: 3.5rem;
+}
+
+.wordmark {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.85rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.principle {
+  margin: 0.45rem 0 0;
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--dim);
+  font-size: 1.02rem;
+}
+
+.whisper, .hint, .kicker, .foot {
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.92rem;
+}
+
+.compose { margin-bottom: 2.75rem; }
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem 2rem;
+  align-items: flex-end;
+  margin-bottom: 1.5rem;
+}
+
+.meta label, .saying {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.meta label { flex: 1 1 9rem; }
+
+.meta label, .saying-label, .hold span {
+  color: var(--dim);
+  font-size: 0.92rem;
+}
+
+input, textarea {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+  padding: 0.45rem 0 0.55rem;
+  color: var(--parchment);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 6.5rem;
+  font-family: var(--serif);
+  font-size: 1.45rem;
+  line-height: 1.35;
+  padding-top: 0.2rem;
+}
+
+input:focus, textarea:focus, button:focus-visible, summary:focus-visible {
+  outline: 1px solid var(--copper);
+  outline-offset: 3px;
+}
+
+.hold {
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+  margin: 0 0 1.75rem;
+}
+
+.hold input { width: auto; accent-color: var(--copper); }
+
+.text-button, .send, .utterance {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.text-button {
+  color: var(--dim);
+  padding-bottom: 0.55rem;
+}
+
+.text-button:hover, .utterance:hover .said { color: var(--copper-soft); }
+
+.send-row {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.send {
+  color: var(--copper);
+  font-size: 1.05rem;
+}
+
+.send:hover { color: var(--copper-soft); }
+.send:disabled, .utterance:disabled { opacity: 0.45; cursor: progress; }
+
+.said-already { margin-bottom: 3.5rem; }
+
+.kicker { margin-bottom: 0.4rem; }
+
+.utterance {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.95rem 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.said {
+  display: block;
+  font-family: var(--serif);
+  font-size: 1.12rem;
+  line-height: 1.35;
+  color: var(--parchment);
+}
+
+.aside {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--dim);
+  font-size: 0.86rem;
+}
+
+.response { min-height: 8rem; margin-bottom: 3.5rem; }
+
+.settle {
+  animation: settle 480ms ease;
+}
+
+@keyframes settle {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settle { animation: none; }
+}
+
+.quiet-note { color: var(--dim); }
+
+.breath {
+  margin: 0 0 1.6rem;
+  color: var(--faint);
+  font-size: 0.78rem;
+  letter-spacing: 0.22em;
+  text-transform: lowercase;
+}
+
+.lean-in {
+  margin: 0 0 2.4rem;
+  padding: 0.15rem 0 0.15rem 1.15rem;
+  border-left: 1px solid var(--copper);
+}
+
+.ask {
+  margin: 0 0 0.7rem;
+  color: var(--copper);
+  font-size: 0.86rem;
+}
+
+.question {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: clamp(1.45rem, 2.4vw, 1.85rem);
+  line-height: 1.35;
+  color: var(--parchment);
+}
+
+.ledger-status {
+  margin: 0 0 0.45rem;
+  color: var(--copper-soft);
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+}
+
+.canonical {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: clamp(1.85rem, 4vw, 2.45rem);
+  font-weight: 400;
+  line-height: 1.22;
+  letter-spacing: -0.02em;
+  color: var(--parchment);
+}
+
+.annotation {
+  margin: 1.15rem 0 0;
+  color: var(--dim);
+  font-size: 0.95rem;
+}
+
+.annotation .mono, .event .mono, pre {
+  font-family: var(--mono);
+}
+
+h2 {
+  margin: 0 0 1rem;
+  font-family: var(--serif);
+  font-size: 1.35rem;
+  font-weight: 400;
+}
+
+.thread, .provenance {
+  padding-top: 2rem;
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--hairline);
+}
+
+.transcript {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.transcript:empty::before {
+  content: "The sitting is still empty.";
+  color: var(--dim);
+}
+
+.turn { padding: 1.15rem 0; }
+.turn + .turn { border-top: 1px solid var(--hairline); }
+
+.turn .who {
+  margin: 0;
+  color: var(--dim);
+  font-size: 0.82rem;
+}
+
+.turn .line {
+  margin: 0.35rem 0 0;
+  font-family: var(--serif);
+  font-size: 1.15rem;
+}
+
+.turn .after {
+  margin: 0.45rem 0 0;
+  color: var(--faint);
+  font-size: 0.86rem;
+}
+
+.turn .echo {
+  margin: 0.55rem 0 0;
+  font-family: var(--serif);
+  color: var(--parchment);
+  font-size: 1.02rem;
+}
+
+.evidence p { margin: 0 0 0.7rem; }
+
+.event, .source-turn { color: var(--dim); }
+
+.kept-line {
+  font-family: var(--serif);
+  font-size: 1.25rem;
+  color: var(--parchment);
+}
+
+details { margin-top: 2.2rem; }
+
+summary {
+  cursor: pointer;
+  color: var(--dim);
+  font-size: 0.92rem;
+}
+
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--dim);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  margin: 0.8rem 0 0;
+}
+
+.error {
+  margin: 1rem 0 0;
+  color: var(--clay);
+}
+
+.foot {
+  margin-top: 3.5rem;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .page { width: min(40rem, calc(100% - 2rem)); padding-top: 2.75rem; }
+  .mast { align-items: flex-start; flex-direction: column; }
+}

@@ -193,6 +193,10 @@ and `intervention_reason`.
 
 `handle_turn_payload` in `intelligence/api.py` is the same entry without HTTP.
 
+### Demo UI
+
+Local single-page demo (fixture Brain + Vault SQLite, no API keys): [frontend/README.md](frontend/README.md).
+
 ### Persist handoff
 
 After every turn, including filter skips, `BrainPipeline` asks

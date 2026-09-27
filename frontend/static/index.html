@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VeraLock</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="page">
+    <header class="mast">
+      <div>
+        <p class="wordmark">VeraLock</p>
+        <p class="principle">Speaks only when it must.</p>
+      </div>
+      <p class="whisper" id="health">Listening…</p>
+    </header>
+
+    <main>
+      <form id="turn-form" class="compose">
+        <div class="meta">
+          <label>
+            Session
+            <input id="session-id" name="session_id" autocomplete="off" spellcheck="false" required>
+          </label>
+          <label>
+            Speaker
+            <input id="speaker-role" name="speaker_role" list="speaker-roles" value="user" autocomplete="off" required>
+            <datalist id="speaker-roles">
+              <option value="user"></option>
+              <option value="teammate"></option>
+            </datalist>
+          </label>
+          <button class="text-button" type="button" id="new-session">Begin again</button>
+        </div>
+
+        <label class="hold">
+          <input id="intervened" type="checkbox">
+          <span>Someone already stepped in. Hold confirmation.</span>
+        </label>
+
+        <label class="saying">
+          <span class="saying-label">What was said</span>
+          <textarea id="text" name="text" rows="3" placeholder="A sentence, said once." required></textarea>
+        </label>
+
+        <div class="send-row">
+          <button class="send" type="submit" id="send">Send</button>
+          <p class="hint">Enter sends. Shift+Enter keeps the line.</p>
+        </div>
+        <p class="error" id="error" role="alert" hidden></p>
+      </form>
+
+      <section class="said-already" aria-label="Things people say">
+        <p class="kicker">Or begin with something already said</p>
+        <div id="chips"></div>
+      </section>
+
+      <section class="response" aria-live="polite" aria-label="Last response">
+        <div id="hero-body" class="quiet-note">Nothing has been said. VeraLock is still.</div>
+      </section>
+
+      <section class="thread" aria-labelledby="transcript-heading">
+        <h2 id="transcript-heading">This sitting</h2>
+        <ol class="transcript" id="transcript"></ol>
+      </section>
+
+      <section class="provenance" aria-labelledby="evidence-heading">
+        <h2 id="evidence-heading">Kept</h2>
+        <p class="whisper" id="vault-meta">Nothing written down yet.</p>
+        <div id="evidence" class="evidence quiet-note">A kept promise will show its trail here.</div>
+      </section>
+    </main>
+
+    <footer class="foot" id="foot">Fixture mode · no API keys</footer>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
