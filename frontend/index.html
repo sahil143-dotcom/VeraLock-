@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Frost & Flow HVAC — VeraLock Operational Commitment Record</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #080c14;
+      --bg-card: #0f172a;
+      --bg-card-hover: #1e293b;
+      --border-color: #1e293b;
+      --border-light: #334155;
+      --accent-cyan: #06b6d4;
+      --accent-blue: #3b82f6;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem 1rem;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(6, 182, 212, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(59, 130, 246, 0.08) 0%, transparent 40%);
+    }
+
+    .container {
+      max-width: 1200px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+
+    .brand-logo {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      color: #fff;
+      font-size: 1.3rem;
+      box-shadow: 0 0 25px rgba(6, 182, 212, 0.35);
+    }
+
+    .brand-title {
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(to right, #ffffff, #cbd5e1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-subtitle {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background-color: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: var(--accent-emerald);
+      padding: 0.4rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--accent-emerald);
+      box-shadow: 0 0 10px var(--accent-emerald);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .grid-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+
+    @media (max-width: 900px) {
+      .grid-layout { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1.4rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: #f1f5f9;
+    }
+
+    .btn {
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 0.75rem 1.25rem;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 15px rgba(6, 182, 212, 0.25);
+    }
+
+    .btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(6, 182, 212, 0.4);
+    }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #f43f5e, #e11d48);
+      box-shadow: 0 4px 15px rgba(244, 63, 94, 0.25);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-light);
+      color: var(--text-main);
+      box-shadow: none;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: var(--accent-cyan);
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Preset Beats Bar */
+    .presets-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.5rem;
+    }
+
+    .preset-btn {
+      background-color: rgba(30, 41, 59, 0.5);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.6rem 0.75rem;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .preset-btn:hover {
+      background-color: var(--bg-card-hover);
+      border-color: var(--accent-cyan);
+      color: #fff;
+    }
+
+    .preset-label {
+      font-weight: 700;
+      color: var(--accent-cyan);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    /* Chat Conversation Stream */
+    .chat-stream {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      max-height: 420px;
+      overflow-y: auto;
+      padding-right: 0.3rem;
+    }
+
+    .chat-bubble {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      padding: 0.85rem 1rem;
+      border-radius: 12px;
+      max-width: 90%;
+      font-size: 0.9rem;
+      line-height: 1.45;
+      animation: slideIn 0.25s ease;
+      transition: all 0.2s ease;
+    }
+
+    .chat-bubble.customer {
+      align-self: flex-start;
+      background-color: rgba(6, 182, 212, 0.08);
+      border: 1px solid rgba(6, 182, 212, 0.2);
+      border-bottom-left-radius: 2px;
+    }
+
+    .chat-bubble.business {
+      align-self: flex-end;
+      background-color: rgba(59, 130, 246, 0.1);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      border-bottom-right-radius: 2px;
+    }
+
+    /* VeraLock Clarification Agent Intervention Bubble */
+    .chat-bubble.agent-clarify {
+      align-self: center;
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(245, 158, 11, 0.06));
+      border: 1px solid rgba(245, 158, 11, 0.45);
+      border-radius: 12px;
+      width: 95%;
+      box-shadow: 0 4px 15px rgba(245, 158, 11, 0.15);
+    }
+
+    .chat-bubble.highlighted {
+      box-shadow: 0 0 20px var(--accent-cyan);
+      border-color: var(--accent-cyan);
+    }
+
+    .speaker-tag {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .speaker-tag.customer { color: var(--accent-cyan); }
+    .speaker-tag.business { color: var(--accent-blue); }
+    .speaker-tag.agent { color: var(--accent-amber); font-weight: 800; }
+
+    /* OPERATIONAL RECORD CARD (The WOW Output) */
+    .record-ticket {
+      background: linear-gradient(145deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.6));
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      border-radius: 14px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .record-ticket::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(to right, var(--accent-cyan), var(--accent-blue), var(--accent-emerald));
+    }
+
+    .ticket-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .ticket-badge {
+      padding: 0.3rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .ticket-badge.CONFIRMED {
+      background-color: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: var(--accent-emerald);
+    }
+
+    .ticket-badge.AWAITING_CLARIFICATION {
+      background-color: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      color: var(--accent-amber);
+    }
+
+    .record-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.85rem;
+      background-color: rgba(0, 0, 0, 0.3);
+      padding: 0.85rem;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .record-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .record-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-family: var(--font-mono);
+      letter-spacing: 0.04em;
+    }
+
+    .record-value {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #f8fafc;
+
+    .provenance-tag {
+      font-size: 0.68rem;
+      font-family: var(--font-mono);
+      color: var(--accent-cyan);
+      background: rgba(6, 182, 212, 0.12);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      margin-left: 0.4rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-block;
+    }
+    .provenance-tag:hover {
+      background: var(--accent-cyan);
+      color: #000;
+      font-weight: 700;
+    }
+
+    /* Collapsible Turn Audit Stream */
+    .audit-details {
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 0.6rem 0.85rem;
+      background-color: rgba(0, 0, 0, 0.2);
+    }
+
+    .audit-details summary {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      cursor: pointer;
+      user-select: none;
+      outline: none;
+    }
+
+    .audit-details summary:hover {
+      color: var(--accent-cyan);
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div class="brand-logo">V3</div>
+        <div>
+          <div class="brand-title">Frost & Flow HVAC Service Desk</div>
+          <div class="brand-subtitle">Powered by VeraLock Autonomous Call Auditing</div>
+        </div>
+      </div>
+      <div class="status-pill">
+        <div class="status-dot"></div>
+        <span id="engineState">Engine Active (Listening)</span>
+      </div>
+    </header>
+
+    <div class="grid-layout">
+      <!-- LEFT COLUMN: Conversation Stream & Controls -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+            Live Customer Call Stream
+          </div>
+          <button id="micToggleBtn" class="btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
+            Start Mic
+          </button>
+        </div>
+
+        <!-- Role & Presets selector -->
+        <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); font-family: var(--font-mono);">SIMULATE DEMO BEATS:</span>
+            <select id="roleSelect" style="background: var(--bg-dark); border: 1px solid var(--border-light); color: #fff; padding: 0.3rem 0.6rem; border-radius: 6px; font-size: 0.78rem; font-family: var(--font-mono);">
+              <option value="customer">Role: Customer</option>
+              <option value="business">Role: Technician (Frost & Flow)</option>
+            </select>
+          </div>
+
+          <div class="presets-grid">
+            <button class="preset-btn" onclick="triggerBeat('customer', 'Hi, my AC unit stopped cooling completely — it is just blowing warm air. Can someone come out tomorrow morning?')">
+              <span class="preset-label">Beat 1a — Customer Request</span>
+              "AC broken. Can someone come tomorrow?"
+            </button>
+            <button class="preset-btn" onclick="triggerBeat('business', 'I will have a tech at your place by 10:00 AM tomorrow. We will diagnose the unit.')">
+              <span class="preset-label">Beat 1b — Tech Confirmation</span>
+              "I will have a tech by 10:00 AM tomorrow."
+            </button>
+            <button class="preset-btn" onclick="triggerBeat('customer', 'One more thing — if it turns out the compressor is shot, go ahead and replace it.')">
+              <span class="preset-label">Beat 2a — Conditional Scope</span>
+              "If compressor is shot, replace it."
+            </button>
+            <button class="preset-btn" onclick="triggerBeat('business', 'Yeah, we will take care of it.')">
+              <span class="preset-label" style="color: var(--accent-amber);">Beat 2b — Vague Response (CLARIFY)</span>
+              "Yeah, we will take care of it."
+            </button>
+            <button class="preset-btn" onclick="triggerBeat('customer', 'Do not do any work over three hundred dollars without calling me first for approval.')">
+              <span class="preset-label">Beat 3 — Spend Limit ($300)</span>
+              "No work over $300 without calling me."
+            </button>
+            <button class="preset-btn" onclick="triggerBeat('business', 'I will do the diagnosis at 10 AM tomorrow, and I will call you for approval before exceeding $300.')">
+              <span class="preset-label">Beat 4 — Explicit Follow-up</span>
+              "I will diagnose at 10 AM & call before $300."
+            </button>
+          </div>
+        </div>
+
+        <!-- Chat Stream -->
+        <div id="chatStream" class="chat-stream">
+          <div class="chat-bubble customer">
+            <span class="speaker-tag customer">👤 Customer</span>
+            Call session connected. Click a demo beat above or start your microphone to speak...
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN: Rendered Service Commitment Record -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+            Live Operational Commitment Record
+          </div>
+        </div>
+
+        <!-- Rendered Commitment Ticket (The WOW Output Card) -->
+        <div class="record-ticket">
+          <div class="ticket-header">
+            <div>
+              <div style="font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono);">SERVICE TICKET #HVAC-8402</div>
+              <div style="font-size: 1.1rem; font-weight: 800; color: #fff;">Frost & Flow HVAC Service Call</div>
+            </div>
+            <div id="recordBadge" class="ticket-badge CONFIRMED">CONFIRMED</div>
+          </div>
+
+          <div class="record-grid">
+            <div class="record-item">
+              <span class="record-label">Scheduled Arrival</span>
+              <div style="display: flex; align-items: center; flex-wrap: wrap;">
+                <span id="recTime" class="record-value" style="color: var(--accent-cyan);">Tomorrow @ 10:00 AM</span>
+                <span id="provTime" class="provenance-tag" style="display: none;" onclick="highlightTurnByNum(2)" title="Click to view source turn in call stream">provenance: Turn 2</span>
+              </div>
+            </div>
+            <div class="record-item">
+              <span class="record-label">Financial Threshold</span>
+              <div style="display: flex; align-items: center; flex-wrap: wrap;">
+                <span id="recMoney" class="record-value" style="color: var(--accent-emerald);">Max $300 (Phone Approval)</span>
+                <span id="provMoney" class="provenance-tag" style="display: none;" onclick="highlightTurnByNum(5)" title="Click to view source turn in call stream">provenance: Turn 5</span>
+              </div>
+            </div>
+            <div class="record-item" style="grid-column: span 2;">
+              <span class="record-label">Agreed Action & Scope</span>
+              <div style="display: flex; align-items: center; flex-wrap: wrap;">
+                <span id="recScope" class="record-value">Diagnostic visit + Compressor replacement if required</span>
+                <span id="provScope" class="provenance-tag" style="display: none;" onclick="highlightTurnByNum(3)" title="Click to view source turn in call stream">provenance: Turn 3</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Collapsible Per-Turn Audit Stream -->
+        <details class="audit-details" open>
+          <summary>🔍 View Turn Reasoning Audit Log</summary>
+          <div id="auditLog" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 180px; overflow-y: auto; margin-top: 0.6rem;">
+            <!-- Audit items appended here -->
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let socket = null;
+    let audioContext = null;
+    let mediaStream = null;
+    let scriptProcessor = null;
+    let globalTurnCount = 0;
+
+    const micToggleBtn = document.getElementById('micToggleBtn');
+    const roleSelect = document.getElementById('roleSelect');
+    const chatStream = document.getElementById('chatStream');
+    const recordBadge = document.getElementById('recordBadge');
+    const recTime = document.getElementById('recTime');
+    const recMoney = document.getElementById('recMoney');
+    const recScope = document.getElementById('recScope');
+    const provTime = document.getElementById('provTime');
+    const provMoney = document.getElementById('provMoney');
+    const provScope = document.getElementById('provScope');
+    const auditLog = document.getElementById('auditLog');
+
+    // Auto-connect WebSocket immediately
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      connectWebSocket();
+    } else {
+      window.addEventListener('DOMContentLoaded', connectWebSocket);
+    }
+
+    function connectWebSocket() {
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/voice`;
+      console.log('[VoiceClient] Connecting to WebSocket:', wsUrl);
+      
+      socket = new WebSocket(wsUrl);
+
+      socket.onopen = () => {
+        console.log('[VoiceClient] WebSocket Connected!');
+        document.getElementById('engineState').textContent = 'Engine Active (Listening)';
+      };
+
+      socket.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        console.log('[VoiceClient] Message received:', msg);
+        handleServerMessage(msg);
+      };
+
+      socket.onclose = (e) => {
+        console.warn('[VoiceClient] WebSocket Closed:', e);
+        document.getElementById('engineState').textContent = 'Engine Offline (Reconnecting...)';
+        setTimeout(connectWebSocket, 2000);
+      };
+
+      socket.onerror = (err) => {
+        console.error('[VoiceClient] WebSocket Error:', err);
+      };
+    }
+
+    micToggleBtn.addEventListener('click', toggleMicrophone);
+
+    async function toggleMicrophone() {
+      if (mediaStream) {
+        stopMicrophone();
+        micToggleBtn.textContent = 'Start Mic';
+        micToggleBtn.classList.remove('btn-danger');
+      } else {
+        await startMicrophone();
+        micToggleBtn.textContent = 'Stop Mic';
+        micToggleBtn.classList.add('btn-danger');
+      }
+    }
+
+    async function startMicrophone() {
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+        const source = audioContext.createMediaStreamSource(mediaStream);
+        scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+        
+        scriptProcessor.onaudioprocess = (e) => {
+          if (!socket || socket.readyState !== WebSocket.OPEN) return;
+          const inputData = e.inputBuffer.getChannelData(0);
+          const pcm16 = new Int16Array(inputData.length);
+          for (let i = 0; i < inputData.length; i++) {
+            const s = Math.max(-1, Math.min(1, inputData[i]));
+            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+          }
+          
+          const bytes = new Uint8Array(pcm16.buffer);
+          let binary = '';
+          const len = bytes.byteLength;
+          for (let i = 0; i < len; i += 1024) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 1024, len)));
+          }
+          socket.send(JSON.stringify({ type: 'audio_chunk', pcm: btoa(binary) }));
+        };
+
+        source.connect(scriptProcessor);
+        scriptProcessor.connect(audioContext.destination);
+
+      } catch (err) {
+        console.error('Mic Error:', err);
+        alert('Microphone Access Error: ' + err.message);
+      }
+    }
+
+    function stopMicrophone() {
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(t => t.stop());
+        mediaStream = null;
+      }
+      if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+      }
+    }
+
+    function triggerBeat(role, text) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        alert('Connecting to VeraLock Call Engine... please try again in a moment.');
+        return;
+      }
+      socket.send(JSON.stringify({
+        type: 'test_transcript',
+        text: text,
+        speaker_role: role
+      }));
+    }
+
+    function handleServerMessage(msg) {
+      if (msg.type === 'final_transcript') {
+        globalTurnCount++;
+        renderChatBubble(msg.speaker_role || 'customer', msg.text, globalTurnCount);
+      } 
+      else if (msg.type === 'turn_result') {
+        renderTurnAudit(msg.result, msg.text, msg.speaker_role, globalTurnCount);
+        updateOperationalRecord(msg.result, msg.text, globalTurnCount);
+      }
+    }
+
+    function renderChatBubble(role, text, turnNum) {
+      const bubble = document.createElement('div');
+      const isCustomer = role === 'customer';
+      bubble.className = `chat-bubble ${isCustomer ? 'customer' : 'business'}`;
+      bubble.id = `chat-turn-${turnNum}`;
+      
+      bubble.innerHTML = `
+        <span class="speaker-tag ${isCustomer ? 'customer' : 'business'}">
+          ${isCustomer ? '👤 Customer' : '🧰 Technician (Frost & Flow)'}
+          <span style="font-family: var(--font-mono); opacity: 0.6; font-size: 0.65rem;">(Turn ${turnNum})</span>
+        </span>
+        ${text}
+      `;
+      chatStream.appendChild(bubble);
+      chatStream.scrollTop = chatStream.scrollHeight;
+    }
+
+    function renderClarificationBubble(questionText) {
+      const bubble = document.createElement('div');
+      bubble.className = 'chat-bubble agent-clarify';
+      
+      bubble.innerHTML = `
+        <span class="speaker-tag agent">⚡ VeraLock Voice Intervention (Spoken Clarification)</span>
+        "${questionText}"
+      `;
+      chatStream.appendChild(bubble);
+      chatStream.scrollTop = chatStream.scrollHeight;
+
+      // Speak question out loud via Browser SpeechSynthesis
+      speakText(questionText);
+    }
+
+    function updateOperationalRecord(result, text, turnNum) {
+      const commitment = result.commitment || {};
+      const status = commitment.status || 'NO_COMMITMENT';
+      const action = result.speech_action;
+
+      // When CLARIFY fires: render VeraLock intervention bubble in chat stream!
+      if (action === 'CLARIFY' || status === 'AWAITING_CLARIFICATION') {
+        recordBadge.className = 'ticket-badge AWAITING_CLARIFICATION';
+        recordBadge.textContent = 'NEEDS CLARIFICATION';
+        
+        const prompt = result.clarification_question || 
+                       result.spoken_clarification || 
+                       `Just to confirm — is replacing the compressor pre-approved, or does it need your OK after inspection?`;
+        
+        renderClarificationBubble(prompt);
+      } else {
+        if (status === 'CONFIRMED') {
+          recordBadge.className = 'ticket-badge CONFIRMED';
+          recordBadge.textContent = 'CONFIRMED & VERIFIED';
+        }
+      }
+
+      // Update Ticket Content & Provenance links dynamically
+      const lower = text.toLowerCase();
+      if (lower.includes('10:00 am') || lower.includes('10 am') || lower.includes('tomorrow')) {
+        recTime.textContent = 'Tomorrow @ 10:00 AM';
+        provTime.textContent = `provenance: Turn ${turnNum}`;
+        provTime.style.display = 'inline-block';
+      }
+      if (lower.includes('three hundred') || lower.includes('300')) {
+        recMoney.textContent = 'Max $300 (Phone Approval Required)';
+        provMoney.textContent = `provenance: Turn ${turnNum}`;
+        provMoney.style.display = 'inline-block';
+      }
+      if (lower.includes('compressor')) {
+        recScope.textContent = 'Diagnose AC cooling + Replace Compressor if required';
+        provScope.textContent = `provenance: Turn ${turnNum}`;
+        provScope.style.display = 'inline-block';
+      }
+    }
+
+    function renderTurnAudit(result, text, role, turnNum) {
+      const item = document.createElement('div');
+      item.style.cssText = 'background: rgba(0,0,0,0.3); padding: 0.5rem 0.75rem; border-radius: 8px; border: 1px solid var(--border-color); font-size: 0.75rem; font-family: var(--font-mono); display: flex; justify-content: space-between; align-items: center;';
+      
+      const isClarify = result.speech_action === 'CLARIFY';
+      const status = (result.commitment && result.commitment.status) || 'NO_COMMITMENT';
+      const conf = Math.round((result.commitment && result.commitment.confidence || 0) * 100);
+
+      item.innerHTML = `
+        <span style="color: var(--text-muted);">Turn ${turnNum} (${role === 'customer' ? 'Customer' : 'Tech'})</span>
+        <span style="color: ${isClarify ? 'var(--accent-amber)' : 'var(--accent-emerald)';} font-weight: 700;">
+          ${result.speech_action} [${status}] (${conf}%)
+        </span>
+      `;
+      auditLog.prepend(item);
+    }
+
+    function highlightTurnByNum(num) {
+      const el = document.getElementById(`chat-turn-${num}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('highlighted');
+        setTimeout(() => el.classList.remove('highlighted'), 2000);
+      }
+    }
+
+    function speakText(text) {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,18 +1,25 @@
-"""OpenAI-compatible chat completions client for the Brain reasoner.
+"""LLM clients for the Brain reasoner.
 
-Stdlib only. No SDK. The client is selected by `Reasoner` when fixture mode
-is off and an API key is present. It never reads a key at import time.
+Stdlib only. No SDK. Two providers are supported:
 
-One `complete(prompt)` call posts one non-streaming chat completion and
-returns the assistant message text. JSON mode is the default
-(`response_format: json_object`). `json_schema` sends the same A→G schema
-`parse_ag` accepts.
+* OpenAI-compatible (default): ``OpenAICompatibleLLM`` – POST /chat/completions.
+  Selected when ``VERALOCK_LLM_API_KEY`` / ``OPENAI_API_KEY`` is set and
+  ``VERALOCK_LLM_PROVIDER`` is absent or not ``gemini``.
+
+* Google Gemini: ``GeminiLLM`` – POST generateContent via REST.
+  Selected when ``VERALOCK_LLM_PROVIDER=gemini`` and ``VERALOCK_LLM_API_KEY``
+  is set (the Gemini API key).
+
+One ``complete(prompt)`` call makes one non-streaming request and returns the
+assistant text (the A→G JSON string). Importing this module never contacts the
+network and never requires a key.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Callable, Mapping, Optional
@@ -188,27 +195,45 @@ def system_prompt() -> str:
     )
 
 
+_RETRYABLE_HTTP_CODES = frozenset({429, 500, 502, 503})
+_MAX_RETRIES = 3
+_BACKOFF_BASE = 5.0  # seconds; doubles each retry (5, 10, 20)
+
+
 def urllib_transport(
     url: str,
     headers: dict[str, str],
     body: bytes,
     timeout: float,
 ) -> tuple[int, bytes]:
-    """POST via urllib. Raises LLMAdapterError. Does not include the key or body."""
-    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            status = int(getattr(response, "status", 200))
-            return status, response.read()
-    except urllib.error.HTTPError as exc:
-        exc.read()
-        raise LLMAdapterError(f"LLM HTTP {exc.code}") from exc
-    except urllib.error.URLError as exc:
-        if isinstance(exc.reason, TimeoutError):
+    """POST via urllib with retry-on-transient. Raises LLMAdapterError.
+
+    Retries up to ``_MAX_RETRIES`` times on HTTP 429 / 500 / 502 / 503 with
+    exponential backoff. All other errors are raised immediately.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_RETRIES + 1):
+        request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                status = int(getattr(response, "status", 200))
+                return status, response.read()
+        except urllib.error.HTTPError as exc:
+            exc.read()
+            if exc.code in _RETRYABLE_HTTP_CODES and attempt < _MAX_RETRIES:
+                wait = _BACKOFF_BASE * (2 ** attempt)
+                time.sleep(wait)
+                last_exc = exc
+                continue
+            raise LLMAdapterError(f"LLM HTTP {exc.code}") from exc
+        except urllib.error.URLError as exc:
+            if isinstance(exc.reason, TimeoutError):
+                raise LLMAdapterError("LLM request timed out") from exc
+            raise LLMAdapterError("LLM request failed") from exc
+        except TimeoutError as exc:
             raise LLMAdapterError("LLM request timed out") from exc
-        raise LLMAdapterError("LLM request failed") from exc
-    except TimeoutError as exc:
-        raise LLMAdapterError("LLM request timed out") from exc
+    # Should not reach here, but safety net
+    raise LLMAdapterError(f"LLM request failed after {_MAX_RETRIES} retries") from last_exc
 
 
 def _message_text(payload: dict[str, Any]) -> str:
@@ -312,25 +337,140 @@ class OpenAICompatibleLLM:
         return _message_text(decoded)
 
 
+# ---------------------------------------------------------------------------
+# Gemini REST adapter
+# ---------------------------------------------------------------------------
+
+GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+GEMINI_DEFAULT_MODEL = "gemini-3.8-flash"
+
+
+class GeminiLLM:
+    """Google Gemini generateContent (REST, stdlib-only).
+
+    Sends a single-turn ``contents`` payload to
+    ``POST /v1beta/models/{model}:generateContent?key={api_key}``
+    and returns the text of the first candidate part.
+
+    The system prompt is injected as a ``systemInstruction`` so the model
+    returns a bare A→G JSON object identical to what ``OpenAICompatibleLLM``
+    produces.
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str = GEMINI_DEFAULT_MODEL,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        transport: Optional[Transport] = None,
+    ) -> None:
+        key = api_key.strip()
+        if not key:
+            raise ValueError("Gemini api_key is empty")
+        self._api_key = key
+        self.model = model.strip() or GEMINI_DEFAULT_MODEL
+        self.timeout = timeout if timeout > 0 else DEFAULT_TIMEOUT_SECONDS
+        self.transport: Transport = transport or urllib_transport
+
+    def __repr__(self) -> str:
+        return f"GeminiLLM(model={self.model!r})"
+
+    def complete(self, prompt: str) -> str:
+        """One generateContent request. Returns the assistant A→G JSON text."""
+        url = (
+            f"{GEMINI_API_BASE}/{self.model}:generateContent"
+            f"?key={self._api_key}"
+        )
+        payload: dict[str, Any] = {
+            "systemInstruction": {
+                "parts": [{"text": system_prompt()}]
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": prompt}],
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0,
+                "responseMimeType": "application/json",
+            },
+        }
+        body = json.dumps(payload).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        try:
+            status, raw = self.transport(url, headers, body, self.timeout)
+        except LLMAdapterError:
+            raise
+        except TimeoutError as exc:
+            raise LLMAdapterError("Gemini request timed out") from exc
+        except OSError as exc:
+            raise LLMAdapterError("Gemini request failed") from exc
+        if status >= 400:
+            detail = raw.decode("utf-8", errors="replace")[:300]
+            raise LLMAdapterError(f"Gemini HTTP {status}: {detail}")
+        try:
+            decoded = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise LLMAdapterError("Gemini response was not JSON") from exc
+        return _gemini_text(decoded)
+
+
+def _gemini_text(payload: dict[str, Any]) -> str:
+    """Extract the text from a Gemini generateContent response."""
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list) or not candidates:
+        raise LLMAdapterError("Gemini response missing candidates")
+    first = candidates[0]
+    if not isinstance(first, dict):
+        raise LLMAdapterError("Gemini response missing candidate object")
+    content = first.get("content")
+    if not isinstance(content, dict):
+        raise LLMAdapterError("Gemini response missing content")
+    parts = content.get("parts")
+    if not isinstance(parts, list) or not parts:
+        raise LLMAdapterError("Gemini response missing parts")
+    for part in parts:
+        if isinstance(part, dict):
+            text = part.get("text")
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+    raise LLMAdapterError("Gemini response had no text part")
+
+
+# ---------------------------------------------------------------------------
+# Environment factory
+# ---------------------------------------------------------------------------
+
+
 def client_from_env(
     environ: Optional[Mapping[str, str]] = None,
-) -> Optional[OpenAICompatibleLLM]:
-    """Build a client from the environment, or None when no key is set.
+) -> "Optional[OpenAICompatibleLLM | GeminiLLM]":
+    """Build an LLM client from the environment, or None when no key is set.
 
-    `VERALOCK_LLM_API_KEY` wins over `OPENAI_API_KEY`. The same preference
-    applies to base URL (`VERALOCK_LLM_BASE_URL` / `OPENAI_BASE_URL`) and
-    model (`VERALOCK_LLM_MODEL` / `OPENAI_MODEL`).
+    Provider selection:
+    - ``VERALOCK_LLM_PROVIDER=gemini`` → ``GeminiLLM`` using
+      ``VERALOCK_LLM_API_KEY`` as the Gemini API key and
+      ``VERALOCK_LLM_MODEL`` (default ``gemini-2.0-flash``).
+    - Anything else → ``OpenAICompatibleLLM``: ``VERALOCK_LLM_API_KEY``
+      wins over ``OPENAI_API_KEY``. Same preference for base URL and model.
     """
     env = os.environ if environ is None else environ
+    provider = (env.get("VERALOCK_LLM_PROVIDER") or "").strip().lower()
     api_key = _first_env(env, "VERALOCK_LLM_API_KEY", "OPENAI_API_KEY")
     if api_key is None:
         return None
+    timeout = _timeout_seconds(_first_env(env, "VERALOCK_LLM_TIMEOUT"))
+    if provider == "gemini":
+        model = _first_env(env, "VERALOCK_LLM_MODEL") or GEMINI_DEFAULT_MODEL
+        return GeminiLLM(api_key=api_key, model=model, timeout=timeout)
+    # OpenAI-compatible path
     base_url = _first_env(env, "VERALOCK_LLM_BASE_URL", "OPENAI_BASE_URL") or DEFAULT_BASE_URL
     model = _first_env(env, "VERALOCK_LLM_MODEL", "OPENAI_MODEL") or DEFAULT_MODEL
     response_format = normalize_response_format(
         _first_env(env, "VERALOCK_LLM_RESPONSE_FORMAT")
     )
-    timeout = _timeout_seconds(_first_env(env, "VERALOCK_LLM_TIMEOUT"))
     return OpenAICompatibleLLM(
         api_key=api_key,
         base_url=base_url,

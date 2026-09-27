@@ -1,16 +1,25 @@
 """Turn audio → text.
 
 ``TurnAudioAdapter`` is the Brain kickoff protocol: audio bytes or a filesystem
-path in, transcript text out. ``StubASR`` is the offline default. The OpenAI
-Whisper adapter is constructed only when Voice ASR env vars select it and
-``OPENAI_API_KEY`` is set. Importing this module never contacts the network
-and never requires a key.
+path in, transcript text out. ``StubASR`` is the offline default.
+
+Two live adapters are supported:
+
+* ``OpenAIWhisperAdapter``: selected when ``VERALOCK_VOICE_ASR`` is ``openai``
+  or ``whisper`` and ``OPENAI_API_KEY`` is set.
+
+* ``AssemblyAIAdapter``: selected when ``VERALOCK_VOICE_ASR=assemblyai`` and
+  ``ASSEMBLYAI_API_KEY`` is set. Uploads audio then polls for the completed
+  transcript using the AssemblyAI v2 REST API (stdlib only, no SDK).
+
+Importing this module never contacts the network and never requires a key.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -24,7 +33,10 @@ ASR_BACKEND_ENV = "VERALOCK_VOICE_ASR"
 OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 OPENAI_MODEL_ENV = "OPENAI_TRANSCRIBE_MODEL"
 OPENAI_BASE_URL_ENV = "OPENAI_BASE_URL"
+ASSEMBLYAI_API_KEY_ENV = "ASSEMBLYAI_API_KEY"
+ASSEMBLYAI_API_BASE = "https://api.assemblyai.com"
 _OPENAI_BACKENDS = frozenset({"openai", "whisper"})
+_ASSEMBLYAI_BACKENDS = frozenset({"assemblyai", "aai"})
 
 
 @runtime_checkable
@@ -115,19 +127,139 @@ class OpenAIWhisperAdapter:
         return text.strip()
 
 
-def turn_audio_adapter_from_env(text: str = DEFAULT_TRANSCRIPT) -> TurnAudioAdapter:
-    """Return StubASR unless Whisper/OpenAI is explicitly selected and a key is set.
+class AssemblyAIAdapter:
+    """AssemblyAI audio transcription via the v2 REST API (stdlib only, no SDK).
 
-    Activation requires both ``VERALOCK_VOICE_ASR`` in ``{openai, whisper}`` and
-    a non-empty ``OPENAI_API_KEY``. Otherwise this returns ``StubASR`` and does
-    not read further credentials. Safe to call in CI with no env configured.
+    Two-step flow:
+    1. ``POST /v2/upload`` – upload raw audio bytes; returns ``upload_url``.
+    2. ``POST /v2/transcript`` – start a transcription job; returns ``id``.
+    3. Poll ``GET /v2/transcript/{id}`` until ``status`` is ``completed``
+       or ``error``.
+
+    All network I/O happens inside ``transcribe``; constructing this class is
+    safe in CI as long as ``transcribe`` is not called.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        poll_interval: float = 1.5,
+        timeout: float = 120.0,
+    ) -> None:
+        key = api_key.strip()
+        if not key:
+            raise ValueError(f"{ASSEMBLYAI_API_KEY_ENV} is required for AssemblyAI")
+        self._api_key = key
+        self.poll_interval = max(0.5, poll_interval)
+        self.timeout = timeout
+
+    def _headers(self) -> dict:
+        return {
+            "Authorization": self._api_key,
+            "Content-Type": "application/json",
+        }
+
+    def transcribe(self, audio: bytes | str | Path) -> str:
+        payload, _ = _load_audio(audio)
+        if not payload:
+            raise ValueError("audio bytes are empty")
+        upload_url = self._upload(payload)
+        transcript_id = self._submit(upload_url)
+        return self._poll(transcript_id)
+
+    def _upload(self, data: bytes) -> str:
+        url = f"{ASSEMBLYAI_API_BASE}/v2/upload"
+        req = Request(
+            url,
+            data=data,
+            headers={"Authorization": self._api_key, "Content-Type": "application/octet-stream"},
+            method="POST",
+        )
+        try:
+            with urlopen(req, timeout=30) as resp:
+                raw = resp.read()
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:400]
+            raise RuntimeError(f"AssemblyAI upload failed: HTTP {exc.code} {detail}") from exc
+        except URLError as exc:
+            raise RuntimeError(f"AssemblyAI upload failed: {exc.reason}") from exc
+        body = json.loads(raw.decode("utf-8"))
+        upload_url = body.get("upload_url") if isinstance(body, dict) else None
+        if not isinstance(upload_url, str) or not upload_url.strip():
+            raise RuntimeError("AssemblyAI upload returned no upload_url")
+        return upload_url
+
+    def _submit(self, upload_url: str) -> str:
+        url = f"{ASSEMBLYAI_API_BASE}/v2/transcript"
+        body = json.dumps({"audio_url": upload_url}).encode("utf-8")
+        req = Request(url, data=body, headers=self._headers(), method="POST")
+        try:
+            with urlopen(req, timeout=30) as resp:
+                raw = resp.read()
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:400]
+            raise RuntimeError(f"AssemblyAI submit failed: HTTP {exc.code} {detail}") from exc
+        except URLError as exc:
+            raise RuntimeError(f"AssemblyAI submit failed: {exc.reason}") from exc
+        data = json.loads(raw.decode("utf-8"))
+        transcript_id = data.get("id") if isinstance(data, dict) else None
+        if not isinstance(transcript_id, str) or not transcript_id.strip():
+            raise RuntimeError("AssemblyAI submit returned no transcript id")
+        return transcript_id
+
+    def _poll(self, transcript_id: str) -> str:
+        url = f"{ASSEMBLYAI_API_BASE}/v2/transcript/{transcript_id}"
+        headers = {"Authorization": self._api_key}
+        deadline = time.monotonic() + self.timeout
+        while time.monotonic() < deadline:
+            req = Request(url, headers=headers, method="GET")
+            try:
+                with urlopen(req, timeout=30) as resp:
+                    raw = resp.read()
+            except HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="replace")[:400]
+                raise RuntimeError(f"AssemblyAI poll failed: HTTP {exc.code} {detail}") from exc
+            except URLError as exc:
+                raise RuntimeError(f"AssemblyAI poll failed: {exc.reason}") from exc
+            data = json.loads(raw.decode("utf-8"))
+            status = data.get("status") if isinstance(data, dict) else None
+            if status == "completed":
+                text = data.get("text")
+                if not isinstance(text, str) or not text.strip():
+                    raise RuntimeError("AssemblyAI completed but returned empty text")
+                return text.strip()
+            if status == "error":
+                error = data.get("error", "unknown error")
+                raise RuntimeError(f"AssemblyAI transcription error: {error}")
+            time.sleep(self.poll_interval)
+        raise RuntimeError(
+            f"AssemblyAI transcription timed out after {self.timeout}s "
+            f"(transcript_id={transcript_id})"
+        )
+
+
+def turn_audio_adapter_from_env(text: str = DEFAULT_TRANSCRIPT) -> TurnAudioAdapter:
+    """Return the appropriate ASR adapter based on env vars.
+
+    Priority:
+    1. ``VERALOCK_VOICE_ASR=assemblyai`` + ``ASSEMBLYAI_API_KEY`` set
+       → ``AssemblyAIAdapter``.
+    2. ``VERALOCK_VOICE_ASR`` in ``{openai, whisper}`` + ``OPENAI_API_KEY`` set
+       → ``OpenAIWhisperAdapter``.
+    3. Fallback → ``StubASR`` (offline, deterministic).
     """
     backend = os.environ.get(ASR_BACKEND_ENV, "").strip().lower()
-    api_key = os.environ.get(OPENAI_API_KEY_ENV, "").strip()
-    if backend in _OPENAI_BACKENDS and api_key:
-        model = os.environ.get(OPENAI_MODEL_ENV, "whisper-1")
-        base_url = os.environ.get(OPENAI_BASE_URL_ENV, "https://api.openai.com/v1")
-        return OpenAIWhisperAdapter(api_key, model=model, base_url=base_url)
+    if backend in _ASSEMBLYAI_BACKENDS:
+        aai_key = os.environ.get(ASSEMBLYAI_API_KEY_ENV, "").strip()
+        if aai_key:
+            return AssemblyAIAdapter(aai_key)
+    if backend in _OPENAI_BACKENDS:
+        api_key = os.environ.get(OPENAI_API_KEY_ENV, "").strip()
+        if api_key:
+            model = os.environ.get(OPENAI_MODEL_ENV, "whisper-1")
+            base_url = os.environ.get(OPENAI_BASE_URL_ENV, "https://api.openai.com/v1")
+            return OpenAIWhisperAdapter(api_key, model=model, base_url=base_url)
     return StubASR(text)
 
 
